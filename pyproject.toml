@@ -1,0 +1,50 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "codearkt"
+version = "0.0.1"
+description = "CodeAct implementation with Docker and MCP"
+readme = "README.md"
+authors = [
+    {name = "Ilya Gusev", email = "phoenixilya@gmail.com"}
+]
+requires-python = ">=3.12"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "academia-mcp==0.0.7",
+    "docker>=7.1.0",
+    "mcp[http]==1.10.1",
+    "types-docker>=7.1.0.20250523",
+]
+
+[project.urls]
+Homepage = "https://github.com/IlyaGusev/codearkt"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["codearkt*"]
+exclude = ["container*"]
+
+[tool.mypy]
+python_version = "3.12"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+strict = true
+explicit_package_bases = true
+
+[[tool.mypy.overrides]]
+module = "pydantic.*"
+follow_imports = "skip"
+
+[[tool.mypy.overrides]]
+module = "fastapi.*"
+ignore_missing_imports = true
+follow_imports = "skip"
