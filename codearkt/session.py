@@ -3,7 +3,7 @@ import docker
 import textwrap
 import time
 import requests
-from typing import Literal
+from typing import Literal, Tuple
 
 
 IMAGE = "phoenix120/codearkt_http"
@@ -40,7 +40,6 @@ class Session:
         return f"http://localhost:{mapping['HostPort']}"
 
     def _wait_for_ready(self, max_wait: int = 30) -> None:
-        """Wait for the container's HTTP server to be ready."""
         start_time = time.time()
         while time.time() - start_time < max_wait:
             try:
@@ -51,11 +50,10 @@ class Session:
                     return
             except (requests.RequestException, requests.ConnectionError):
                 pass
-            print(self.get_logs())
             time.sleep(0.5)
         raise RuntimeError("Container failed to become ready within timeout")
 
-    def run(self, code: str) -> str:
+    def run(self, code: str) -> Tuple[str, str]:
         if time.monotonic() - self._start > SESSION_TTL:
             raise RuntimeError("Session TTL exceeded; create a new Session.")
         payload = {"code": textwrap.dedent(code)}
@@ -65,7 +63,7 @@ class Session:
         output: str = out.get("stdout", "")
         if out.get("error"):
             output += "\n" + out["error"]
-        return output
+        return "", output
 
     def get_logs(self, tail: Literal["all"] | int = "all") -> str:
         return self._container.logs(tail=tail).decode("utf-8")
