@@ -30,7 +30,6 @@ class Session:
         )
         self._start = time.monotonic()
         self._url = self._get_url()
-        self._wait_for_ready()
 
     # ---------------------------------------------------------------------
     def _get_url(self) -> str:
@@ -54,6 +53,7 @@ class Session:
         raise RuntimeError("Container failed to become ready within timeout")
 
     def run(self, code: str) -> Tuple[str, str]:
+        self._wait_for_ready()
         if time.monotonic() - self._start > SESSION_TTL:
             raise RuntimeError("Session TTL exceeded; create a new Session.")
         payload = {"code": textwrap.dedent(code)}

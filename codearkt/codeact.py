@@ -1,7 +1,7 @@
 import re
 import uuid
 from dataclasses import dataclass
-from typing import List, Self, Dict, Any
+from typing import List, Self, Dict, Any, Optional
 
 import yaml
 
@@ -67,11 +67,16 @@ class Prompts:
 class CodeActAgent:
     def __init__(
         self,
+        name: str,
+        description: str,
         llm: LLM,
         prompts: Prompts,
         max_iterations: int = 10,
         mcp_url: str = "http://localhost:5055/mcp",
+        managed_agents: Optional[List[Self]] = None,
     ) -> None:
+        self.name = name
+        self.description = description
         self.llm: LLM = llm
         self.prompts: Prompts = prompts
         self.max_iterations = max_iterations
@@ -80,6 +85,7 @@ class CodeActAgent:
 
         self.messages: List[ChatMessage] = []
         self.step_number = 0
+        self.managed_agents: Optional[List[Self]] = managed_agents
 
     async def ainvoke(self, messages: ChatMessages) -> None:
         tools = await fetch_tools(self.mcp_url)
