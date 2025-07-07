@@ -2,6 +2,7 @@ import re
 import uuid
 from dataclasses import dataclass
 from typing import List, Self, Dict, Any, Optional
+from datetime import datetime
 
 import yaml
 
@@ -10,6 +11,7 @@ from jinja2 import Template
 
 from codearkt.python_executor import PythonExecutor
 from codearkt.mcp_client import fetch_tools
+from codearkt.event_bus import AgentEventBus, AgentEvent, EventType
 from codearkt.llm import LLM, ChatMessages, ChatMessage, FunctionCall, ToolCall
 
 
@@ -80,49 +82,73 @@ class CodeActAgent:
         self.llm: LLM = llm
         self.prompts: Prompts = prompts
         self.max_iterations = max_iterations
-        self.python_executor = PythonExecutor()
         self.mcp_url = mcp_url
-
-        self.messages: List[ChatMessage] = []
-        self.step_number = 0
         self.managed_agents: Optional[List[Self]] = managed_agents
+        self.event_bus: Optional[AgentEventBus] = None
 
-    async def ainvoke(self, messages: ChatMessages) -> None:
+    def set_event_bus(self, event_bus: AgentEventBus) -> None:
+        self.event_bus = event_bus
+
+    async def ainvoke(
+        self,
+        messages: ChatMessages,
+        session_id: str,
+    ) -> List[ChatMessage]:
+        python_executor = PythonExecutor(session_id=session_id)
+
         tools = await fetch_tools(self.mcp_url)
         self.prompts.format(tools=tools)
 
         messages = fix_code_actions(messages)
-        self.messages = [ChatMessage(role="system", content=self.prompts.system)] + messages
+        messages = [ChatMessage(role="system", content=self.prompts.system)] + messages
 
-        for step_number in range(self.max_iterations):
-            self.step_number = step_number
-            await self._step()
-            if self.messages[-1].role == "assistant":
+        for i in range(self.max_iterations):
+            print(self.name, f"step {i} started")
+            await self._step(messages, python_executor, session_id)
+            if messages[-1].role == "assistant":
                 break
         else:
-            self.step_number += 1
             await self._handle_final_message()
+        return messages
 
-    async def _step(self) -> None:
+    async def _step(
+        self,
+        messages: ChatMessages,
+        python_executor: PythonExecutor,
+        session_id: str,
+    ) -> None:
         output_text = ""
-        output_stream = self.llm.astream(self.messages, stop=STOP_SEQUENCES)
+        output_stream = self.llm.astream(messages, stop=STOP_SEQUENCES)
         tool_call_id = f"toolu_{str(uuid.uuid4())[:8]}"
         async for event in output_stream:
             if isinstance(event.content, str):
-                output_text += event.content
+                chunk = event.content
             elif isinstance(event.content, list):
-                output_text += "\n".join([str(item) for item in event.content])
+                chunk = "\n".join([str(item) for item in event.content])
+            output_text += chunk
+            print(chunk, end="")
+            await self.event_bus.publish_event(
+                AgentEvent(
+                    session_id=session_id,
+                    agent_name=self.name,
+                    timestamp=datetime.now().isoformat(),
+                    event_type=EventType.OUTPUT,
+                    data=chunk,
+                )
+            )
 
         if (
             output_text
             and output_text.strip().endswith("```")
             and not output_text.strip().endswith("<end_code>")
         ):
-            output_text += "<end_code>\n"
+            chunk = "<end_code>\n"
+            output_text += chunk
+            print(chunk)
 
         code_action = extract_code_from_text(output_text)
         if code_action is None:
-            self.messages.append(ChatMessage(role="assistant", content=output_text))
+            messages.append(ChatMessage(role="assistant", content=output_text))
             return
 
         tool_call_message = ChatMessage(
@@ -135,51 +161,36 @@ class CodeActAgent:
                 )
             ],
         )
-        self.messages.append(tool_call_message)
+        messages.append(tool_call_message)
         try:
-            output, execution_logs = self.python_executor.invoke(code_action)
+            output, execution_logs = await python_executor.invoke(code_action)
             observation = "Execution logs:\n" + execution_logs
             if output:
                 output = str(output)
                 observation += "\n\nLast output from code snippet:\n" + output
         except Exception as e:
             observation = f"Error: {e}"
+        print("Observation:", observation)
         tool_message = ChatMessage(role="tool", content=observation, tool_call_id=tool_call_id)
-        self.messages.append(tool_message)
+        messages.append(tool_message)
 
-    async def _handle_final_message(self) -> None:
+    async def _handle_final_message(self, messages: ChatMessages) -> None:
         prompt = self.prompts.final
         final_message = ChatMessage(role="user", content=prompt)
-        self.messages.append(final_message)
+        messages.append(final_message)
 
-        output_stream = self.llm.astream(self.messages, stop=STOP_SEQUENCES)
+        output_stream = self.llm.astream(messages, stop=STOP_SEQUENCES)
         output_text = ""
         async for event in output_stream:
             if isinstance(event.content, str):
                 output_text += event.content
-        self.messages.append(ChatMessage(role="assistant", content=output_text))
+        messages.append(ChatMessage(role="assistant", content=output_text))
 
-
-if __name__ == "__main__":
-    import asyncio
-    import os
-    from dotenv import load_dotenv
-
-    load_dotenv()
-
-    llm = LLM(
-        model_name="gpt-4o-mini",
-        base_url="https://api.openai.com/v1",
-        api_key=os.getenv("OPENAI_API_KEY", ""),
-    )
-    prompts = Prompts.load("codearkt/prompts/codeact.yaml")
-    agent = CodeActAgent(llm, prompts)
-    asyncio.run(
-        agent.ainvoke(
-            [
-                ChatMessage(
-                    role="user", content="Print the abstract of the PingPong paper by Ilya Gusev"
-                )
-            ]
-        )
-    )
+    def get_all_agents(self) -> List[Self]:
+        agents = [self]
+        if self.managed_agents:
+            agents.extend(self.managed_agents)
+            for agent in self.managed_agents:
+                agents.extend(agent.get_all_agents())
+        agents = {agent.name: agent for agent in agents}
+        return list(agents.values())

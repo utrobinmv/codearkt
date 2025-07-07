@@ -14,7 +14,7 @@ MCP_CONFIG = {
 
 def main() -> None:
     agent = get_simple_agent()
-    run_mcp_server([agent], MCP_CONFIG)
+    run_mcp_server(agent, MCP_CONFIG)
 
 
 if __name__ == "__main__":

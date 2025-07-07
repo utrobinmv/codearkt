@@ -2,7 +2,8 @@ import io
 import contextlib
 import traceback
 import asyncio
-from typing import Dict, Any
+from typing import Dict, Any, Optional
+from functools import partial
 
 from fastapi import FastAPI
 from pydantic import BaseModel
@@ -15,8 +16,9 @@ _globals: Dict[str, Any] = {"__name__": "__main__"}
 _tools_are_fetched = False
 
 
-class Code(BaseModel):  # type: ignore
+class Payload(BaseModel):  # type: ignore
     code: str
+    session_id: Optional[str] = None
 
 
 class ExecResult(BaseModel):  # type: ignore
@@ -24,7 +26,10 @@ class ExecResult(BaseModel):  # type: ignore
     error: str
 
 
-def _execute_code(code: str, globals_dict: Dict[str, Any]) -> ExecResult:
+def _execute_code(
+    code: str,
+    globals_dict: Dict[str, Any],
+) -> ExecResult:
     buf = io.StringIO()
     try:
         with contextlib.redirect_stdout(buf):
@@ -35,12 +40,17 @@ def _execute_code(code: str, globals_dict: Dict[str, Any]) -> ExecResult:
 
 
 @app.post("/exec")  # type: ignore
-async def exec_code(payload: Code) -> ExecResult:
+async def exec_code(payload: Payload) -> ExecResult:
     global _tools_are_fetched
     if not _tools_are_fetched:
         tools = await fetch_tools()
         for tool_name, tool_fn in tools.items():
             _globals[tool_name] = tool_fn
+            if payload.session_id and tool_name.startswith("agent__"):
+                _globals[tool_name] = partial(
+                    tool_fn,
+                    session_id=payload.session_id,
+                )
         _tools_are_fetched = True
 
     loop = asyncio.get_event_loop()
