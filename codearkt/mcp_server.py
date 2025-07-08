@@ -17,30 +17,36 @@ def run_mcp_server(main_agent: CodeActAgent, mcp_config: Dict[str, Any]) -> None
     for agent in main_agent.get_all_agents():
         agent.set_event_bus(event_bus)
 
-        @proxy.tool(name="agent__" + agent.name, description=agent.description)
-        async def agent_tool(query: str, session_id: Optional[str] = None) -> str:
+        async def agent_tool(
+            query: str,
+            session_id: Optional[str] = None,
+            agent_instance=agent
+        ) -> str:
             session_id = session_id or str(uuid.uuid4())
 
             async def run_agent(query: str):
                 current_task = asyncio.current_task()
                 event_bus.register_task(session_id, current_task)
-                await agent.ainvoke(
+                return await agent_instance.ainvoke(
                     messages=[ChatMessage(role="user", content=query)],
                     session_id=session_id,
                 )
 
-            asyncio.create_task(run_agent(query=query))
-            return "Session ID: " + session_id
+            return await run_agent(query=query)
 
-        @proxy.tool(
-            name="agent__" + agent.name + "__logs", description="Get the logs for the agent"
+        proxy.add_tool(
+            proxy.tool(name="agent__" + agent.name, description=agent.description)(
+                agent_tool
+            )
         )
-        async def agent_logs(session_id: str) -> str:
-            queue = event_bus.subscribe_to_session(session_id)
-            elements = []
-            while not queue.empty():
-                event = await asyncio.wait_for(queue.get(), timeout=1.0)
-                elements.append(event.data)
-            return "".join(elements)
+
+    @proxy.tool(name="get_agent_logs", description="Get the logs for the agent")
+    async def agent_logs(session_id: str) -> str:
+        queue = event_bus.subscribe_to_session(session_id)
+        elements = []
+        while not queue.empty():
+            event = await asyncio.wait_for(queue.get(), timeout=1.0)
+            elements.append(event.data)
+        return "".join(elements)
 
     proxy.run(transport="http", host="0.0.0.0", port=5055, path="/mcp")

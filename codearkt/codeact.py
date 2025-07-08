@@ -94,6 +94,7 @@ class CodeActAgent:
         messages: ChatMessages,
         session_id: str,
     ) -> List[ChatMessage]:
+        print(f"Invoking agent {self.name} with session_id {session_id}")
         python_executor = PythonExecutor(session_id=session_id)
 
         tools = await fetch_tools(self.mcp_url)
