@@ -93,7 +93,7 @@ class CodeActAgent:
         self,
         messages: ChatMessages,
         session_id: str,
-    ) -> List[ChatMessage]:
+    ) -> str:
         print(f"Invoking agent {self.name} with session_id {session_id}")
         python_executor = PythonExecutor(session_id=session_id)
 
@@ -109,8 +109,8 @@ class CodeActAgent:
             if messages[-1].role == "assistant":
                 break
         else:
-            await self._handle_final_message()
-        return messages
+            await self._handle_final_message(messages)
+        return str(messages[-1].content)
 
     async def _step(
         self,
@@ -118,6 +118,7 @@ class CodeActAgent:
         python_executor: PythonExecutor,
         session_id: str,
     ) -> None:
+        assert self.event_bus is not None
         output_text = ""
         output_stream = self.llm.astream(messages, stop=STOP_SEQUENCES)
         tool_call_id = f"toolu_{str(uuid.uuid4())[:8]}"
@@ -134,7 +135,7 @@ class CodeActAgent:
                     agent_name=self.name,
                     timestamp=datetime.now().isoformat(),
                     event_type=EventType.OUTPUT,
-                    data=chunk,
+                    data={"text": chunk},
                 )
             )
 
@@ -164,11 +165,8 @@ class CodeActAgent:
         )
         messages.append(tool_call_message)
         try:
-            output, execution_logs = await python_executor.invoke(code_action)
+            execution_logs = await python_executor.invoke(code_action)
             observation = "Execution logs:\n" + execution_logs
-            if output:
-                output = str(output)
-                observation += "\n\nLast output from code snippet:\n" + output
         except Exception as e:
             observation = f"Error: {e}"
         print("Observation:", observation)
@@ -193,5 +191,5 @@ class CodeActAgent:
             agents.extend(self.managed_agents)
             for agent in self.managed_agents:
                 agents.extend(agent.get_all_agents())
-        agents = {agent.name: agent for agent in agents}
-        return list(agents.values())
+        named_agents = {agent.name: agent for agent in agents}
+        return list(named_agents.values())
