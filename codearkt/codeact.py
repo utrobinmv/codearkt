@@ -1,5 +1,6 @@
 import re
 import uuid
+from pathlib import Path
 from dataclasses import dataclass
 from typing import List, Self, Dict, Any, Optional
 from datetime import datetime
@@ -56,7 +57,7 @@ class Prompts:
     final: str
 
     @classmethod
-    def load(cls, path: str) -> Self:
+    def load(cls, path: str | Path) -> Self:
         with open(path) as f:
             template = f.read()
         templates: Dict[str, Any] = yaml.safe_load(template)

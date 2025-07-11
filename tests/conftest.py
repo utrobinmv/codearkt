@@ -1,4 +1,3 @@
-import os
 import asyncio
 import threading
 import time
@@ -20,11 +19,7 @@ for name in ("httpx", "mcp", "openai"):
 
 @pytest.fixture
 def gpt_4o_mini() -> LLM:
-    return LLM(
-        model_name="gpt-4o-mini",
-        base_url="https://api.openai.com/v1",
-        api_key=os.getenv("OPENAI_API_KEY", ""),
-    )
+    return LLM(model_name="gpt-4o-mini")
 
 
 class TestMCPServer:

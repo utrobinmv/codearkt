@@ -1,4 +1,3 @@
-import os
 from dotenv import load_dotenv
 
 from codearkt.codeact import CodeActAgent, Prompts
@@ -8,10 +7,10 @@ load_dotenv()
 
 
 def get_simple_agent() -> CodeActAgent:
-    llm = LLM(model_name="gpt-4o-mini", base_url="https://api.openai.com/v1", api_key=os.getenv("OPENAI_API_KEY"))
+    llm = LLM(model_name="gpt-4o-mini")
     prompts = Prompts.load("codearkt/prompts/codeact.yaml")
     return CodeActAgent(
-        name="simple_agent",
+        name="manager",
         description="A simple agent",
         llm=llm,
         prompts=prompts,

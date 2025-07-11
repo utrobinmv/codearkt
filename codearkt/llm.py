@@ -1,9 +1,15 @@
+import os
 from typing import Dict, Any, List, cast, AsyncGenerator, Optional
 
+from dotenv import load_dotenv
 from pydantic import BaseModel
 from openai import AsyncOpenAI, AsyncStream
 from openai.types.chat.chat_completion_message_param import ChatCompletionMessageParam
 from openai.types.chat.chat_completion_chunk import ChatCompletionChunk, ChoiceDelta
+
+load_dotenv()
+BASE_URL = os.getenv("BASE_URL", "https://openrouter.ai/api/v1")
+API_KEY = os.getenv("OPENROUTER_API_KEY", "")
 
 
 class FunctionCall(BaseModel):  # type: ignore
@@ -32,8 +38,8 @@ class LLM:
     def __init__(
         self,
         model_name: str,
-        base_url: str,
-        api_key: str,
+        base_url: str = BASE_URL,
+        api_key: str = API_KEY,
         temperature: float = 0.6,
         top_p: float = 0.9,
         max_tokens: int = 8192,
@@ -76,18 +82,3 @@ class LLM:
     async def ainvoke(self, messages: ChatMessages) -> None:
         async for delta in self.astream(messages):
             print(delta)
-
-
-if __name__ == "__main__":
-    import asyncio
-    import os
-    from dotenv import load_dotenv
-
-    load_dotenv()
-
-    llm = LLM(
-        model_name="gpt-4o-mini",
-        base_url="https://api.openai.com/v1",
-        api_key=os.getenv("OPENAI_API_KEY", ""),
-    )
-    asyncio.run(llm.ainvoke([ChatMessage(role="user", content="Hello, how are you?")]))
