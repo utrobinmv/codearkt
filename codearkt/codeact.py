@@ -75,6 +75,7 @@ class CodeActAgent:
         description: str,
         llm: LLM,
         prompts: Prompts,
+        tool_names: List[str],
         max_iterations: int = 10,
         server_url: Optional[str] = DEFAULT_SERVER_URL,
         managed_agents: Optional[List[Self]] = None,
@@ -83,10 +84,16 @@ class CodeActAgent:
         self.description = description
         self.llm: LLM = llm
         self.prompts: Prompts = prompts
+        self.tool_names = tool_names
         self.max_iterations = max_iterations
         self.server_url = server_url
         self.managed_agents: Optional[List[Self]] = managed_agents
         self.event_bus: Optional[AgentEventBus] = None
+        if self.managed_agents:
+            for agent in self.managed_agents:
+                agent_tool_name = "agent__" + agent.name
+                if agent_tool_name not in self.tool_names:
+                    self.tool_names.append(agent_tool_name)
 
     def set_event_bus(self, event_bus: AgentEventBus) -> None:
         self.event_bus = event_bus
@@ -97,11 +104,12 @@ class CodeActAgent:
         session_id: str,
     ) -> str:
         print(f"Invoking agent {self.name} with session_id {session_id}")
-        python_executor = PythonExecutor(session_id=session_id)
+        python_executor = PythonExecutor(session_id=session_id, tool_names=self.tool_names)
 
         tools = []
         if self.server_url:
             tools = await fetch_tools(self.server_url)
+            tools = [tool for tool in tools if tool.name in self.tool_names]
         self.prompts.format(tools=tools)
 
         messages = fix_code_actions(messages)

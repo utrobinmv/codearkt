@@ -4,7 +4,7 @@ import httpx
 import asyncio
 import atexit
 import signal
-from typing import Optional, Any
+from typing import Optional, Any, List
 
 import docker
 from docker.models.containers import Container
@@ -19,13 +19,18 @@ CLIENT = None
 
 
 class PythonExecutor:
-    def __init__(self, session_id: str) -> None:
+    def __init__(
+        self,
+        session_id: str,
+        tool_names: List[str],
+    ) -> None:
         global CLIENT
         if CLIENT is None:
             CLIENT = docker.from_env()
 
-        self._session_id = session_id
-        self._container: Optional[Container] = CLIENT.containers.run(
+        self.session_id = session_id
+        self.tool_names = tool_names
+        self.container: Optional[Container] = CLIENT.containers.run(
             IMAGE,
             detach=True,
             auto_remove=True,
@@ -36,8 +41,8 @@ class PythonExecutor:
             pids_limit=128,
             security_opt=["no-new-privileges"],
         )
-        self._start = time.monotonic()
-        self._url = self._get_url()
+        self.start = time.monotonic()
+        self.url = self._get_url()
 
         atexit.register(self._cleanup)
         signal.signal(signal.SIGTERM, self._cleanup)
@@ -48,10 +53,14 @@ class PythonExecutor:
         return await self._call_exec(code)
 
     async def _call_exec(self, code: str) -> str:
-        payload = {"code": textwrap.dedent(code), "session_id": self._session_id}
+        payload = {
+            "code": textwrap.dedent(code),
+            "session_id": self.session_id,
+            "tool_names": self.tool_names,
+        }
 
         async with httpx.AsyncClient() as client:
-            resp = await client.post(f"{self._url}/exec", json=payload, timeout=EXEC_TIMEOUT)
+            resp = await client.post(f"{self.url}/exec", json=payload, timeout=EXEC_TIMEOUT)
             resp.raise_for_status()
             out = resp.json()
 
@@ -64,19 +73,19 @@ class PythonExecutor:
             return output
 
     def _cleanup(self, signum: Optional[Any] = None, frame: Optional[Any] = None) -> None:
-        if self._container:
+        if self.container:
             try:
-                self._container.remove(force=True)
-                self._container = None
+                self.container.remove(force=True)
+                self.container = None
             except Exception:
                 pass
         if signum == signal.SIGINT:
             raise KeyboardInterrupt()
 
     def _get_url(self) -> str:
-        assert self._container is not None
-        self._container.reload()
-        ports = self._container.attrs["NetworkSettings"]["Ports"]
+        assert self.container is not None
+        self.container.reload()
+        ports = self.container.attrs["NetworkSettings"]["Ports"]
         mapping = ports["8000/tcp"][0]
         return f"http://localhost:{mapping['HostPort']}"
 

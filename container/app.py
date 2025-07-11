@@ -2,7 +2,7 @@ import io
 import contextlib
 import traceback
 import asyncio
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from functools import partial
 
 from fastapi import FastAPI
@@ -18,6 +18,7 @@ _tools_are_fetched = False
 
 class Payload(BaseModel):  # type: ignore
     code: str
+    tool_names: List[str]
     session_id: Optional[str] = None
 
 
@@ -44,7 +45,7 @@ async def exec_code(payload: Payload) -> ExecResult:
     global _tools_are_fetched
     if not _tools_are_fetched:
         try:
-            tools = await fetch_tools()
+            tools = await fetch_tools(tool_names=payload.tool_names)
             for tool_name, tool_fn in tools.items():
                 _globals[tool_name] = tool_fn
                 if payload.session_id and tool_name.startswith("agent__"):
@@ -59,5 +60,7 @@ async def exec_code(payload: Payload) -> ExecResult:
             pass
 
     loop = asyncio.get_event_loop()
+
     result = await loop.run_in_executor(None, _execute_code, payload.code, _globals)
+
     return result

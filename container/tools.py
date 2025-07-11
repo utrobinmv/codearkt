@@ -56,7 +56,7 @@ def _call(tool: str, *args: Any, **kwargs: Any) -> List[ContentBlock] | str | No
     return asyncio.run(_acall(tool, *args, **kwargs))
 
 
-async def fetch_tools() -> Dict[str, Callable[..., ToolReturnType]]:
+async def fetch_tools(tool_names: List[str]) -> Dict[str, Callable[..., ToolReturnType]]:
     global _tool_schemas
     final_tools = {}
     async with streamablehttp_client(SERVER_URL + "/mcp") as (
@@ -97,6 +97,9 @@ async def fetch_tools() -> Dict[str, Callable[..., ToolReturnType]]:
             return _call_agent
 
         final_tools["agent__" + agent_name] = create_call_agent(url)
+
+    final_tools = {tool_name: final_tools[tool_name] for tool_name in tool_names}
+
     print("AVAILABLE TOOLS")
     print(final_tools)
     return final_tools

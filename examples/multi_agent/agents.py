@@ -12,7 +12,7 @@ current_dir = Path(__file__).parent
 LIBRARIAN_DESCRIPTION = """This team member runs gets and analyzes information from papers.
 He has access to ArXiv, Semantic Scholar, ACL Anthology, and web search.
 Ask him any questions about papers and web articles.
-Give him your task as an argument. Follow the task format described above, include all the details."""
+Give him your task as an only string argument. Follow the task format described above, include all the details."""
 
 
 def get_librarian() -> CodeActAgent:
@@ -23,6 +23,7 @@ def get_librarian() -> CodeActAgent:
         description=LIBRARIAN_DESCRIPTION,
         llm=llm,
         prompts=prompts,
+        tool_names=["arxiv_download", "arxiv_search"],
     )
 
 
@@ -35,4 +36,5 @@ def get_manager() -> CodeActAgent:
         llm=llm,
         prompts=prompts,
         managed_agents=[get_librarian()],
+        tool_names=[],
     )

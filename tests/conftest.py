@@ -22,7 +22,7 @@ def gpt_4o_mini() -> LLM:
     return LLM(model_name="gpt-4o-mini")
 
 
-class TestMCPServer:
+class MCPServerTest:
     def __init__(self, port: int = 5055) -> None:
         self.port = port
         self.app = academia_app
@@ -75,8 +75,8 @@ class TestMCPServer:
 
 
 @pytest.fixture(scope="session")
-def test_mcp_server() -> Generator[TestMCPServer, None, None]:
-    server = TestMCPServer(port=5055)
+def mcp_server_test() -> Generator[MCPServerTest, None, None]:
+    server = MCPServerTest(port=5055)
     server.start()
     yield server
     server.stop()

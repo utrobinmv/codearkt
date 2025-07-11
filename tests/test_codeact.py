@@ -13,6 +13,7 @@ async def test_codeact_no_tools(gpt_4o_mini: LLM) -> None:
         llm=gpt_4o_mini,
         prompts=prompts,
         server_url=None,
+        tool_names=[],
     )
     result = await agent.ainvoke(
         [ChatMessage(role="user", content="What is 432412421249 * 4332144219?")],

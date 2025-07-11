@@ -20,7 +20,7 @@ def query_manager_agent(
             yield chunk
 
 
-DEFAULT_QUERY = "Call librarian agent to find an abstract of the PingPong paper by Ilya Gusev"
+DEFAULT_QUERY = "Find an abstract of the PingPong paper by Ilya Gusev"
 
 
 def main(query: str = DEFAULT_QUERY) -> None:

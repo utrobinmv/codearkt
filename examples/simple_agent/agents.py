@@ -14,4 +14,5 @@ def get_simple_agent() -> CodeActAgent:
         description="A simple agent",
         llm=llm,
         prompts=prompts,
+        tool_names=["arxiv_download", "arxiv_search"],
     )
