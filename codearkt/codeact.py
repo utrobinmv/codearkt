@@ -10,7 +10,7 @@ from mcp import Tool
 from jinja2 import Template
 
 from codearkt.python_executor import PythonExecutor
-from codearkt.mcp_client import fetch_tools
+from codearkt.tools import fetch_tools
 from codearkt.event_bus import AgentEventBus, AgentEvent, EventType
 from codearkt.llm import LLM, ChatMessages, ChatMessage, FunctionCall, ToolCall
 
@@ -74,7 +74,7 @@ class CodeActAgent:
         llm: LLM,
         prompts: Prompts,
         max_iterations: int = 10,
-        mcp_url: str = "http://localhost:5055/mcp",
+        server_url: str = "http://localhost:5055",
         managed_agents: Optional[List[Self]] = None,
     ) -> None:
         self.name = name
@@ -82,7 +82,7 @@ class CodeActAgent:
         self.llm: LLM = llm
         self.prompts: Prompts = prompts
         self.max_iterations = max_iterations
-        self.mcp_url = mcp_url
+        self.server_url = server_url
         self.managed_agents: Optional[List[Self]] = managed_agents
         self.event_bus: Optional[AgentEventBus] = None
 
@@ -97,7 +97,7 @@ class CodeActAgent:
         print(f"Invoking agent {self.name} with session_id {session_id}")
         python_executor = PythonExecutor(session_id=session_id)
 
-        tools = await fetch_tools(self.mcp_url)
+        tools = await fetch_tools(self.server_url)
         self.prompts.format(tools=tools)
 
         messages = fix_code_actions(messages)

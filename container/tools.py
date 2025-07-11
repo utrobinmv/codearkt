@@ -1,14 +1,16 @@
 import os
 import asyncio
 import functools
+import requests
 from typing import List, Dict, Callable, Any
 
 from mcp import ClientSession, Tool
 from mcp.types import ContentBlock
 from mcp.client.streamable_http import streamablehttp_client
 
-MCP_PORT = os.getenv("MCP_PORT", "5055")
-MCP_URL = os.getenv("MCP_URL", f"http://172.17.0.1:{MCP_PORT}/mcp")
+SERVER_PORT = os.getenv("SERVER_PORT", "5055")
+SERVER_URL = os.getenv("SERVER_URL", f"http://172.17.0.1:{SERVER_PORT}")
+
 
 ToolReturnType = List[ContentBlock] | str | None
 
@@ -16,7 +18,7 @@ _tool_schemas: Dict[str, Tool] = {}
 
 
 async def _acall(tool: str, *args: Any, **kwargs: Any) -> ToolReturnType:
-    async with streamablehttp_client(MCP_URL) as (
+    async with streamablehttp_client(SERVER_URL + "/mcp") as (
         read_stream,
         write_stream,
         _,
@@ -55,7 +57,8 @@ def _call(tool: str, *args: Any, **kwargs: Any) -> List[ContentBlock] | str | No
 
 async def fetch_tools() -> Dict[str, Callable[..., ToolReturnType]]:
     global _tool_schemas
-    async with streamablehttp_client(MCP_URL) as (
+    final_tools = {}
+    async with streamablehttp_client(SERVER_URL + "/mcp") as (
         read_stream,
         write_stream,
         _,
@@ -64,11 +67,28 @@ async def fetch_tools() -> Dict[str, Callable[..., ToolReturnType]]:
             await session.initialize()
             tools_response = await session.list_tools()
             tools: List[Tool] = tools_response.tools
-            final_tools = {}
 
             _tool_schemas = {tool.name: tool for tool in tools}
 
             for tool in tools:
                 tool_fn: Callable[..., ToolReturnType] = functools.partial(_call, tool.name)
                 final_tools[tool.name] = tool_fn
-            return final_tools
+
+    response = requests.get(SERVER_URL + "/agents/list")
+    agent_cards = response.json()
+    for card in agent_cards:
+        agent_name = card["name"]
+        url = SERVER_URL + f"/agents/{agent_name}"
+
+        def create_call_agent(url: str) -> Callable[..., Any]:
+            def _call_agent(query: str, session_id: str) -> Any:
+                payload = {"query": query, "session_id": session_id, "stream": False}
+                response = requests.post(url, json=payload)
+                return response.json()
+
+            return _call_agent
+
+        final_tools["agent__" + agent_name] = create_call_agent(url)
+    print("AVAILABLE TOOLS")
+    print(final_tools)
+    return final_tools

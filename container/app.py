@@ -55,6 +55,7 @@ async def exec_code(payload: Payload) -> ExecResult:
             _tools_are_fetched = True
         except Exception:
             print("Failed to fetch tools")
+            print(traceback.format_exc())
             pass
 
     loop = asyncio.get_event_loop()

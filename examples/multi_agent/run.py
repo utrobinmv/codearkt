@@ -1,4 +1,4 @@
-from codearkt.mcp_server import run_mcp_server
+from codearkt.server import run_server
 from .agent import get_multi_agent
 
 
@@ -14,7 +14,7 @@ MCP_CONFIG = {
 
 def main() -> None:
     agent = get_multi_agent()
-    run_mcp_server(agent, MCP_CONFIG)
+    run_server(agent, MCP_CONFIG)
 
 
 if __name__ == "__main__":
