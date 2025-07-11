@@ -2,6 +2,7 @@ import os
 import asyncio
 import functools
 import requests
+import traceback
 from typing import List, Dict, Callable, Any
 
 from mcp import ClientSession, Tool
@@ -74,8 +75,15 @@ async def fetch_tools() -> Dict[str, Callable[..., ToolReturnType]]:
                 tool_fn: Callable[..., ToolReturnType] = functools.partial(_call, tool.name)
                 final_tools[tool.name] = tool_fn
 
-    response = requests.get(SERVER_URL + "/agents/list")
-    agent_cards = response.json()
+    agent_cards = []
+    try:
+        response = requests.get(SERVER_URL + "/agents/list")
+        agent_cards = response.json()
+    except Exception:
+        print("Failed to fetch agents")
+        print(traceback.format_exc())
+        pass
+
     for card in agent_cards:
         agent_name = card["name"]
         url = SERVER_URL + f"/agents/{agent_name}"

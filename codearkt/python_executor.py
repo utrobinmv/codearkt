@@ -88,7 +88,6 @@ class PythonExecutor:
                 assert result.strip() == "ready"
                 return
             except (httpx.RequestError, httpx.TimeoutException, AssertionError):
-                print("Container not ready yet")
                 pass
             await asyncio.sleep(0.5)
         raise RuntimeError("Container failed to become ready within timeout")

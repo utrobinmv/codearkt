@@ -16,6 +16,7 @@ from codearkt.llm import LLM, ChatMessages, ChatMessage, FunctionCall, ToolCall
 
 
 STOP_SEQUENCES = ["<end_code>", "Observation:", "Calling tools:"]
+DEFAULT_SERVER_URL = "http://localhost:5055"
 
 
 def extract_code_from_text(text: str) -> str | None:
@@ -74,7 +75,7 @@ class CodeActAgent:
         llm: LLM,
         prompts: Prompts,
         max_iterations: int = 10,
-        server_url: str = "http://localhost:5055",
+        server_url: Optional[str] = DEFAULT_SERVER_URL,
         managed_agents: Optional[List[Self]] = None,
     ) -> None:
         self.name = name
@@ -97,7 +98,9 @@ class CodeActAgent:
         print(f"Invoking agent {self.name} with session_id {session_id}")
         python_executor = PythonExecutor(session_id=session_id)
 
-        tools = await fetch_tools(self.server_url)
+        tools = []
+        if self.server_url:
+            tools = await fetch_tools(self.server_url)
         self.prompts.format(tools=tools)
 
         messages = fix_code_actions(messages)
@@ -118,7 +121,6 @@ class CodeActAgent:
         python_executor: PythonExecutor,
         session_id: str,
     ) -> None:
-        assert self.event_bus is not None
         output_text = ""
         output_stream = self.llm.astream(messages, stop=STOP_SEQUENCES)
         tool_call_id = f"toolu_{str(uuid.uuid4())[:8]}"
@@ -129,15 +131,16 @@ class CodeActAgent:
                 chunk = "\n".join([str(item) for item in event.content])
             output_text += chunk
             print(chunk, end="")
-            await self.event_bus.publish_event(
-                AgentEvent(
-                    session_id=session_id,
-                    agent_name=self.name,
-                    timestamp=datetime.now().isoformat(),
-                    event_type=EventType.OUTPUT,
-                    data={"text": chunk},
+            if self.event_bus:
+                await self.event_bus.publish_event(
+                    AgentEvent(
+                        session_id=session_id,
+                        agent_name=self.name,
+                        timestamp=datetime.now().isoformat(),
+                        event_type=EventType.OUTPUT,
+                        data={"text": chunk},
+                    )
                 )
-            )
 
         if (
             output_text

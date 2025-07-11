@@ -48,6 +48,7 @@ def create_agent_endpoint(agent_app: FastAPI, agent_instance: CodeActAgent) -> C
         session_id = request.session_id or str(uuid.uuid4())
 
         if request.stream:
+
             async def stream_response() -> AsyncGenerator[str, None]:
                 asyncio.create_task(run_agent(request.query, session_id))
                 queue = event_bus.subscribe_to_session(session_id)

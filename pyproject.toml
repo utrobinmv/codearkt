@@ -17,6 +17,7 @@ classifiers = [
     "Operating System :: OS Independent",
 ]
 dependencies = [
+    "academia-mcp>=0.0.7",
     "docker>=7.1.0",
     "dotenv>=0.9.9",
     "fastmcp>=2.9.1",

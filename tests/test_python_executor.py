@@ -1,7 +1,7 @@
 import pytest
 
 from codearkt.python_executor import PythonExecutor
-
+from tests.conftest import TestMCPServer
 
 SNIPPET_1 = """
 answer = "Answer 1"
@@ -19,8 +19,8 @@ print("Answer 1:", answer, end="")
 """
 
 
-@pytest.mark.asyncio(scope="session")
-async def test_python_executor_basic():
+@pytest.mark.asyncio(loop_scope="session")
+async def test_python_executor_basic() -> None:
     executor = PythonExecutor("testid")
     result1 = await executor.invoke(SNIPPET_1)
     result2 = await executor.invoke(SNIPPET_2)
@@ -28,8 +28,8 @@ async def test_python_executor_basic():
     assert result2 == "Variable still here: Answer 1"
 
 
-@pytest.mark.asyncio(scope="session")
-async def test_python_executor_mcp_invokation():
+@pytest.mark.asyncio(loop_scope="session")
+async def test_python_executor_mcp_invokation(test_mcp_server: TestMCPServer) -> None:
     executor = PythonExecutor("testid")
     result = await executor.invoke(SNIPPET_3)
-    assert result == "Answer 1: A Unified Framework for Multi-Agent Reinforcement Learning"
+    assert result == "Answer 1: Effect of surface magnetism on the x-ray spectra of hollow atoms"
