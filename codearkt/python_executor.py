@@ -15,7 +15,9 @@ MEM_LIMIT = "512m"
 CPU_QUOTA = 50000
 CPU_PERIOD = 100000
 EXEC_TIMEOUT = 30
+PIDS_LIMIT = 64
 CLIENT = None
+NET_NAME = "sandbox_net"
 
 
 class PythonExecutor:
@@ -28,8 +30,21 @@ class PythonExecutor:
         if CLIENT is None:
             CLIENT = docker.from_env()
 
+        try:
+            net = CLIENT.networks.get(NET_NAME)
+        except docker.errors.NotFound:
+            net = CLIENT.networks.create(
+                NET_NAME,
+                driver="bridge",
+                internal=False,
+                options={
+                    "com.docker.network.bridge.enable_ip_masquerade": "false",
+                },
+            )
+
         self.session_id = session_id
         self.tool_names = tool_names
+
         self.container: Optional[Container] = CLIENT.containers.run(
             IMAGE,
             detach=True,
@@ -38,8 +53,16 @@ class PythonExecutor:
             mem_limit=MEM_LIMIT,
             cpu_period=CPU_PERIOD,
             cpu_quota=CPU_QUOTA,
-            pids_limit=128,
+            pids_limit=PIDS_LIMIT,
+            cap_drop=["ALL"],
+            read_only=True,
+            tmpfs={"/tmp": "rw,size=64m", "/run": "rw,size=16m"},
             security_opt=["no-new-privileges"],
+            extra_hosts={"host.docker.internal": "host-gateway"},
+            sysctls={"net.ipv4.ip_forward": "0"},
+            user="1000:1000",
+            network=net.name,
+            dns=[],
         )
         self.start = time.monotonic()
         self.url = self._get_url()
@@ -75,10 +98,12 @@ class PythonExecutor:
     def _cleanup(self, signum: Optional[Any] = None, frame: Optional[Any] = None) -> None:
         if self.container:
             try:
+                self.container.stop()
                 self.container.remove(force=True)
-                self.container = None
             except Exception:
                 pass
+            finally:
+                self.container = None
         if signum == signal.SIGINT:
             raise KeyboardInterrupt()
 

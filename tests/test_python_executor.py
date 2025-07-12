@@ -18,6 +18,13 @@ answer = json.loads(arxiv_download(paper_id="2506.15003"))["title"]
 print("Answer 1:", answer, end="")
 """
 
+PIP_INSTALL_SNIPPET = """
+import subprocess
+proc = subprocess.run(['pip', 'install', 'transformers'], capture_output=True)
+print(proc.stdout)
+print(proc.stderr)
+"""
+
 
 @pytest.mark.asyncio(loop_scope="session")
 async def test_python_executor_basic() -> None:
@@ -41,3 +48,10 @@ async def test_python_executor_mcp_invokation_no_tools(mcp_server_test: MCPServe
     result = await executor.invoke(SNIPPET_3)
     assert result != "Answer 1: Effect of surface magnetism on the x-ray spectra of hollow atoms"
     assert "Error" in result
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_python_executor_pip_install() -> None:
+    executor = PythonExecutor("testid", tool_names=[])
+    result = await executor.invoke(PIP_INSTALL_SNIPPET)
+    assert "ERROR" in result, result

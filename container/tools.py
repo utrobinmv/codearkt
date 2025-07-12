@@ -10,7 +10,7 @@ from mcp.types import ContentBlock
 from mcp.client.streamable_http import streamablehttp_client
 
 SERVER_PORT = os.getenv("SERVER_PORT", "5055")
-SERVER_URL = os.getenv("SERVER_URL", f"http://172.17.0.1:{SERVER_PORT}")
+SERVER_URL = f"http://host.docker.internal:{SERVER_PORT}"
 
 
 ToolReturnType = List[ContentBlock] | str | None
