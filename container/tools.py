@@ -99,7 +99,6 @@ async def fetch_tools(tool_names: List[str]) -> Dict[str, Callable[..., ToolRetu
         final_tools["agent__" + agent_name] = create_call_agent(url)
 
     final_tools = {tool_name: final_tools[tool_name] for tool_name in tool_names}
-
-    print("AVAILABLE TOOLS")
-    print(final_tools)
+    for tool_name in tool_names:
+        assert tool_name in final_tools, f"Tool {tool_name} not found"
     return final_tools

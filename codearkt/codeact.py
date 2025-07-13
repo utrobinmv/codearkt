@@ -122,6 +122,8 @@ class CodeActAgent:
                 break
         else:
             await self._handle_final_message(messages)
+
+        python_executor.cleanup()
         return str(messages[-1].content)
 
     async def _step(
@@ -177,13 +179,12 @@ class CodeActAgent:
         )
         messages.append(tool_call_message)
         try:
-            execution_logs = await python_executor.invoke(code_action)
-            observation = "Execution logs:\n" + execution_logs
+            code_result = await python_executor.invoke(code_action)
+            messages.extend(code_result.to_messages(tool_call_id))
         except Exception as e:
-            observation = f"Error: {e}"
-        print("Observation:", observation)
-        tool_message = ChatMessage(role="tool", content=observation, tool_call_id=tool_call_id)
-        messages.append(tool_message)
+            messages.append(
+                ChatMessage(role="tool", content=f"Error: {e}", tool_call_id=tool_call_id)
+            )
 
     async def _handle_final_message(self, messages: ChatMessages) -> None:
         prompt = self.prompts.final

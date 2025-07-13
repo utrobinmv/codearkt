@@ -25,6 +25,7 @@ dependencies = [
     "jinja2>=3.1.6",
     "mcp==1.10.1",
     "openai>=1.93.0",
+    "pillow>=11.3.0",
     "pytest-asyncio>=1.0.0",
     "types-docker>=7.1.0.20250523",
     "types-pyyaml>=6.0.12.20250516",

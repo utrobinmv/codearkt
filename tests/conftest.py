@@ -2,18 +2,25 @@ import asyncio
 import threading
 import time
 import logging
-from typing import Generator
+import base64
+from io import BytesIO
+from typing import Generator, Dict
 from contextlib import suppress
+from PIL import Image
 
 import pytest
+import requests
 import uvicorn
 from dotenv import load_dotenv
-from academia_mcp.server import http_app as academia_app
+from mcp.server.fastmcp import FastMCP
+from sse_starlette.sse import AppStatus
+from codearkt.python_executor import PythonExecutor
+from academia_mcp.tools import arxiv_download, arxiv_search
 
 from codearkt.llm import LLM
 
 load_dotenv()
-for name in ("httpx", "mcp", "openai"):
+for name in ("httpx", "mcp", "openai", "uvicorn"):
     logging.getLogger(name).setLevel(logging.WARNING)
 
 
@@ -22,28 +29,68 @@ def gpt_4o_mini() -> LLM:
     return LLM(model_name="gpt-4o-mini")
 
 
+@pytest.fixture
+def gpt_4o() -> LLM:
+    return LLM(model_name="gpt-4o")
+
+
+@pytest.fixture(scope="module")
+def default_python_executor() -> PythonExecutor:
+    return PythonExecutor()
+
+
+def show_image(url: str) -> Dict[str, str]:
+    """
+    Reads an image from the specified URL.
+    Always call this function at the end of the code block.
+    For instance:
+    ```python
+    show_image("https://example.com/image.png")
+    ```
+    Do not print it ever, just return as the last expression.
+
+    Returns an dictionary with a single "image" key.
+    Args:
+        url: Path to file or directory inside current work directory or web URL. Should not be absolute.
+    """
+    assert url.startswith("http")
+    response = requests.get(url)
+    response.raise_for_status()
+    image = Image.open(BytesIO(response.content))
+    buffer_io = BytesIO()
+    image.save(buffer_io, format="PNG")
+    img_bytes = buffer_io.getvalue()
+    return {"image_base64": base64.b64encode(img_bytes).decode("utf-8")}
+
+
+def reset_app_status() -> None:
+    AppStatus.should_exit = False
+    AppStatus.should_exit_event = None
+
+
 class MCPServerTest:
     def __init__(self, port: int = 5055) -> None:
         self.port = port
-        self.app = academia_app
-        self.server: uvicorn.Server | None = None
         self._thread: threading.Thread | None = None
         self._started = threading.Event()
-        for name in ("uvicorn", "uvicorn.error"):
-            logging.getLogger(name).setLevel(logging.ERROR)
-        logging.getLogger("uvicorn.access").setLevel(logging.CRITICAL)
 
-    def start(self) -> None:
+        reset_app_status()
+        mcp_server = FastMCP("Academia MCP", stateless_http=True)
+        mcp_server.add_tool(arxiv_search)
+        mcp_server.add_tool(arxiv_download)
+        mcp_server.add_tool(show_image)
+        app = mcp_server.streamable_http_app()
         config = uvicorn.Config(
-            self.app,
+            app,
             host="0.0.0.0",
             port=self.port,
             log_level="error",
             access_log=False,
             lifespan="on",
         )
-        self.server = uvicorn.Server(config)
+        self.server: uvicorn.Server = uvicorn.Server(config)
 
+    def start(self) -> None:
         def _run() -> None:
             async def _serve() -> None:
                 assert self.server is not None
@@ -69,12 +116,14 @@ class MCPServerTest:
             self.server.should_exit = True
         if self._thread and self._thread.is_alive():
             self._thread.join(timeout=5)
+        reset_app_status()
+        self.app = None
 
     def is_running(self) -> bool:
         return self._started.is_set() and self._thread is not None and self._thread.is_alive()
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="function")
 def mcp_server_test() -> Generator[MCPServerTest, None, None]:
     server = MCPServerTest(port=5055)
     server.start()

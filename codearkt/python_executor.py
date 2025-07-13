@@ -4,10 +4,15 @@ import httpx
 import asyncio
 import atexit
 import signal
-from typing import Optional, Any, List
+import json
+from typing import Optional, Any, List, Dict
 
 import docker
 from docker.models.containers import Container
+from pydantic import BaseModel
+
+from codearkt.llm import ChatMessage
+from codearkt.tools import fetch_tools
 
 
 IMAGE = "phoenix120/codearkt_http"
@@ -20,20 +25,80 @@ CLIENT = None
 NET_NAME = "sandbox_net"
 
 
+class ExecResult(BaseModel):  # type: ignore
+    stdout: str
+    error: str | None = None
+    result: Any | None = None
+
+    def to_messages(self, tool_call_id: str) -> List[ChatMessage]:
+        image_content: List[Dict[str, Any]] | None = None
+        output: str = "Stdout:\n" + self.stdout + "\n\n"
+        if self.result is not None:
+            try:
+                json_result = json.loads(str(self.result))
+                if isinstance(json_result, dict) and "image_base64" in json_result:
+                    image_base64 = json_result["image_base64"]
+                    image_content = [
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": f"data:image/jpeg;base64,{image_base64}"},
+                        }
+                    ]
+            except json.JSONDecodeError:
+                pass
+            if not image_content:
+                output += "Last expression:\n" + str(self.result) + "\n\n"
+        if self.error:
+            output += "Error: " + self.error
+        output = output.strip()
+        print("OUTPUT", output)
+
+        messages = []
+        messages.append(ChatMessage(role="tool", content=output, tool_call_id=tool_call_id))
+        if image_content:
+            messages.append(ChatMessage(role="user", content=image_content))
+        return messages
+
+
+def init_docker() -> docker.DockerClient:
+    global CLIENT
+    if CLIENT is None:
+        CLIENT = docker.from_env()
+
+    assert CLIENT is not None
+    try:
+        CLIENT.ping()  # type: ignore
+    except docker.errors.DockerException as exc:
+        raise RuntimeError(
+            "Docker daemon is not running or not accessible – skipping PythonExecutor setup."
+        ) from exc
+
+    try:
+        CLIENT.images.get(IMAGE)
+    except docker.errors.ImageNotFound:
+        try:
+            CLIENT.images.pull(IMAGE)
+        except docker.errors.DockerException as exc:
+            raise RuntimeError(
+                f"Docker image '{IMAGE}' not found locally and failed to pull automatically."
+            ) from exc
+    except docker.errors.DockerException as exc:
+        raise RuntimeError("Failed to query Docker images – ensure Docker is available.") from exc
+    return CLIENT
+
+
 class PythonExecutor:
     def __init__(
         self,
-        session_id: str,
-        tool_names: List[str],
+        tool_names: List[str] = list(),
+        session_id: Optional[str] = None,
+        mcp_server_port: int = 5055,
     ) -> None:
-        global CLIENT
-        if CLIENT is None:
-            CLIENT = docker.from_env()
-
+        client = init_docker()
         try:
-            net = CLIENT.networks.get(NET_NAME)
+            net = client.networks.get(NET_NAME)
         except docker.errors.NotFound:
-            net = CLIENT.networks.create(
+            net = client.networks.create(
                 NET_NAME,
                 driver="bridge",
                 internal=False,
@@ -44,8 +109,10 @@ class PythonExecutor:
 
         self.session_id = session_id
         self.tool_names = tool_names
+        self.mcp_server_port = mcp_server_port
+        self.tools_are_checked = False
 
-        self.container: Optional[Container] = CLIENT.containers.run(
+        self.container: Optional[Container] = client.containers.run(
             IMAGE,
             detach=True,
             auto_remove=True,
@@ -60,22 +127,34 @@ class PythonExecutor:
             security_opt=["no-new-privileges"],
             extra_hosts={"host.docker.internal": "host-gateway"},
             sysctls={"net.ipv4.ip_forward": "0"},
-            user="1000:1000",
             network=net.name,
             dns=[],
+            environment={"SERVER_PORT": str(mcp_server_port)},
         )
         self.start = time.monotonic()
         self.url = self._get_url()
 
-        atexit.register(self._cleanup)
-        signal.signal(signal.SIGTERM, self._cleanup)
-        signal.signal(signal.SIGINT, self._cleanup)
+        atexit.register(self.cleanup)
+        signal.signal(signal.SIGTERM, self.cleanup)
+        signal.signal(signal.SIGINT, self.cleanup)
 
-    async def invoke(self, code: str) -> str:
+    async def invoke(self, code: str) -> ExecResult:
+        await self._check_tools()
         await self._wait_for_ready()
-        return await self._call_exec(code)
+        result = await self._call_exec(code)
+        return result
 
-    async def _call_exec(self, code: str) -> str:
+    async def _check_tools(self) -> None:
+        if not self.tool_names or self.tools_are_checked:
+            return
+        available_tools = await fetch_tools(f"http://localhost:{self.mcp_server_port}")
+        available_tool_names = [tool.name for tool in available_tools]
+        for tool_name in self.tool_names:
+            if tool_name not in available_tool_names:
+                raise ValueError(f"Tool {tool_name} not found in MCP server")
+        self.tools_are_checked = True
+
+    async def _call_exec(self, code: str) -> ExecResult:
         payload = {
             "code": textwrap.dedent(code),
             "session_id": self.session_id,
@@ -86,19 +165,12 @@ class PythonExecutor:
             resp = await client.post(f"{self.url}/exec", json=payload, timeout=EXEC_TIMEOUT)
             resp.raise_for_status()
             out = resp.json()
+            result: ExecResult = ExecResult.model_validate(out)
+            return result
 
-            output: str = ""
-            if out.get("stdout"):
-                output += out["stdout"] + "\n\n"
-            if out.get("error"):
-                output += "Error: " + out["error"]
-            output = output.strip()
-            return output
-
-    def _cleanup(self, signum: Optional[Any] = None, frame: Optional[Any] = None) -> None:
+    def cleanup(self, signum: Optional[Any] = None, frame: Optional[Any] = None) -> None:
         if self.container:
             try:
-                self.container.stop()
                 self.container.remove(force=True)
             except Exception:
                 pass
@@ -118,10 +190,10 @@ class PythonExecutor:
         start_time = time.time()
         while time.time() - start_time < max_wait:
             try:
-                result = await self._call_exec("print('ready')")
-                assert result.strip() == "ready"
+                output = await self._call_exec("print('ready')")
+                assert output.stdout.strip() == "ready"
                 return
             except (httpx.RequestError, httpx.TimeoutException, AssertionError):
                 pass
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(0.1)
         raise RuntimeError("Container failed to become ready within timeout")

@@ -3,8 +3,10 @@ import pytest
 from codearkt.codeact import CodeActAgent, Prompts
 from codearkt.llm import ChatMessage, LLM
 
+from tests.conftest import MCPServerTest
 
-@pytest.mark.asyncio(loop_scope="session")
+
+@pytest.mark.asyncio(loop_scope="function")
 async def test_codeact_no_tools(gpt_4o_mini: LLM) -> None:
     prompts = Prompts.load("codearkt/prompts/codeact.yaml")
     agent = CodeActAgent(
@@ -21,3 +23,27 @@ async def test_codeact_no_tools(gpt_4o_mini: LLM) -> None:
     )
     str_result = str(result).replace(",", "").replace(".", "").replace(" ", "")
     assert "1873272970937648109531" in str_result, result
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_codeact_images(gpt_4o: LLM, mcp_server_test: MCPServerTest) -> None:
+    _ = mcp_server_test
+    prompts = Prompts.load("codearkt/prompts/codeact.yaml")
+    agent = CodeActAgent(
+        name="agent",
+        description="Just agent",
+        llm=gpt_4o,
+        prompts=prompts,
+        tool_names=["show_image"],
+    )
+    image_url = "https://arxiv.org/html/2409.06820v4/extracted/6347978/pingpong_v3.drawio.png"
+    result = await agent.ainvoke(
+        [
+            ChatMessage(
+                role="user",
+                content=f"What blocks are in this image? {image_url}\nUse show_image tool",
+            )
+        ],
+        session_id="test",
+    )
+    assert "Player" in str(result), result
