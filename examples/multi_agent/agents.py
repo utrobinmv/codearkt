@@ -29,12 +29,10 @@ def get_librarian() -> CodeActAgent:
 
 def get_manager() -> CodeActAgent:
     llm = LLM(model_name="gpt-4o-mini")
-    prompts = Prompts.load("codearkt/prompts/codeact.yaml")
     return CodeActAgent(
         name="manager",
         description="A manager agent",
         llm=llm,
-        prompts=prompts,
         managed_agents=[get_librarian()],
         tool_names=[],
     )

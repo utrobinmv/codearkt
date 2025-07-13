@@ -47,7 +47,8 @@ class LLM:
         **kwargs: Any,
     ) -> None:
         self.model_name = model_name
-        self.api = AsyncOpenAI(base_url=base_url, api_key=api_key)
+        self._base_url = base_url
+        self._api_key = api_key
         self.params = {
             "temperature": temperature,
             "top_p": top_p,
@@ -68,17 +69,15 @@ class LLM:
 
         api_params = {**self.params, **kwargs}
 
-        stream: AsyncStream[ChatCompletionChunk] = await self.api.chat.completions.create(
-            model=self.model_name,
-            messages=casted_messages,
-            stream=True,
-            **api_params,
-        )
-        async for event in stream:
-            event_typed: ChatCompletionChunk = event
-            delta = event_typed.choices[0].delta
-            yield delta
-
-    async def ainvoke(self, messages: ChatMessages) -> None:
-        async for delta in self.astream(messages):
-            print(delta)
+        async with AsyncOpenAI(base_url=self._base_url, api_key=self._api_key) as api:
+            stream: AsyncStream[ChatCompletionChunk] = await api.chat.completions.create(
+                model=self.model_name,
+                messages=casted_messages,
+                stream=True,
+                tool_choice="none",
+                **api_params,
+            )
+            async for event in stream:
+                event_typed: ChatCompletionChunk = event
+                delta = event_typed.choices[0].delta
+                yield delta

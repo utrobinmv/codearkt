@@ -10,6 +10,7 @@ class EventType(StrEnum):
     TOOL_CALL = "tool_call"
     ERROR = "error"
     OUTPUT = "output"
+    OBSERVATION = "observation"
     SESSION_END = "session_end"
 
 

@@ -5,7 +5,8 @@ import asyncio
 import atexit
 import signal
 import json
-from typing import Optional, Any, List, Dict
+import threading
+from typing import Optional, Any, List, Dict, Sequence
 
 import docker
 from docker.models.containers import Container
@@ -51,7 +52,6 @@ class ExecResult(BaseModel):  # type: ignore
         if self.error:
             output += "Error: " + self.error
         output = output.strip()
-        print("OUTPUT", output)
 
         messages = []
         messages.append(ChatMessage(role="tool", content=output, tool_call_id=tool_call_id))
@@ -90,7 +90,7 @@ def init_docker() -> docker.DockerClient:
 class PythonExecutor:
     def __init__(
         self,
-        tool_names: List[str] = list(),
+        tool_names: Sequence[str] = tuple(),
         session_id: Optional[str] = None,
         mcp_server_port: int = 5055,
     ) -> None:
@@ -135,8 +135,9 @@ class PythonExecutor:
         self.url = self._get_url()
 
         atexit.register(self.cleanup)
-        signal.signal(signal.SIGTERM, self.cleanup)
-        signal.signal(signal.SIGINT, self.cleanup)
+        if threading.current_thread() is threading.main_thread():
+            signal.signal(signal.SIGTERM, self.cleanup)
+            signal.signal(signal.SIGINT, self.cleanup)
 
     async def invoke(self, code: str) -> ExecResult:
         await self._check_tools()
@@ -161,7 +162,7 @@ class PythonExecutor:
             "tool_names": self.tool_names,
         }
 
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(limits=httpx.Limits(keepalive_expiry=0)) as client:
             resp = await client.post(f"{self.url}/exec", json=payload, timeout=EXEC_TIMEOUT)
             resp.raise_for_status()
             out = resp.json()

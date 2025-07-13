@@ -22,7 +22,7 @@ async def fetch_tools(url: str) -> List[Tool]:
         pass
 
     try:
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(limits=httpx.Limits(keepalive_expiry=0)) as client:
             resp = await client.get(url + "/agents/list")
             resp.raise_for_status()
             agent_cards = resp.json()

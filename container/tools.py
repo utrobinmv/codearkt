@@ -92,6 +92,7 @@ async def fetch_tools(tool_names: List[str]) -> Dict[str, Callable[..., ToolRetu
             def _call_agent(query: str, session_id: str) -> Any:
                 payload = {"query": query, "session_id": session_id, "stream": False}
                 response = requests.post(url, json=payload)
+                response.raise_for_status()
                 return response.json()
 
             return _call_agent

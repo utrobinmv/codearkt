@@ -2,7 +2,7 @@ import re
 import uuid
 from pathlib import Path
 from dataclasses import dataclass
-from typing import List, Self, Dict, Any, Optional
+from typing import List, Self, Dict, Any, Optional, Sequence
 from datetime import datetime
 
 import yaml
@@ -18,6 +18,7 @@ from codearkt.llm import LLM, ChatMessages, ChatMessage, FunctionCall, ToolCall
 
 STOP_SEQUENCES = ["<end_code>", "Observation:", "Calling tools:"]
 DEFAULT_SERVER_URL = "http://localhost:5055"
+CURRENT_DIR = Path(__file__).parent
 
 
 def extract_code_from_text(text: str) -> str | None:
@@ -67,6 +68,10 @@ class Prompts:
         system_template = Template(self.system)
         self.system = system_template.render(tools=tools)
 
+    @classmethod
+    def default(cls) -> Self:
+        return cls.load(CURRENT_DIR / "prompts" / "default.yaml")
+
 
 class CodeActAgent:
     def __init__(
@@ -74,8 +79,8 @@ class CodeActAgent:
         name: str,
         description: str,
         llm: LLM,
-        prompts: Prompts,
-        tool_names: List[str],
+        tool_names: Sequence[str] = tuple(),
+        prompts: Optional[Prompts] = None,
         max_iterations: int = 10,
         server_url: Optional[str] = DEFAULT_SERVER_URL,
         managed_agents: Optional[List[Self]] = None,
@@ -83,8 +88,8 @@ class CodeActAgent:
         self.name = name
         self.description = description
         self.llm: LLM = llm
-        self.prompts: Prompts = prompts
-        self.tool_names = tool_names
+        self.prompts: Prompts = prompts or Prompts.default()
+        self.tool_names = list(tool_names)
         self.max_iterations = max_iterations
         self.server_url = server_url
         self.managed_agents: Optional[List[Self]] = managed_agents
@@ -103,7 +108,6 @@ class CodeActAgent:
         messages: ChatMessages,
         session_id: str,
     ) -> str:
-        print(f"Invoking agent {self.name} with session_id {session_id}")
         python_executor = PythonExecutor(session_id=session_id, tool_names=self.tool_names)
 
         tools = []
@@ -115,8 +119,7 @@ class CodeActAgent:
         messages = fix_code_actions(messages)
         messages = [ChatMessage(role="system", content=self.prompts.system)] + messages
 
-        for i in range(self.max_iterations):
-            print(self.name, f"step {i} started")
+        for _ in range(self.max_iterations):
             await self._step(messages, python_executor, session_id)
             if messages[-1].role == "assistant":
                 break
@@ -124,6 +127,7 @@ class CodeActAgent:
             await self._handle_final_message(messages)
 
         python_executor.cleanup()
+        await self._publish_event(session_id, {}, EventType.SESSION_END)
         return str(messages[-1].content)
 
     async def _step(
@@ -141,17 +145,8 @@ class CodeActAgent:
             elif isinstance(event.content, list):
                 chunk = "\n".join([str(item) for item in event.content])
             output_text += chunk
-            print(chunk, end="")
-            if self.event_bus:
-                await self.event_bus.publish_event(
-                    AgentEvent(
-                        session_id=session_id,
-                        agent_name=self.name,
-                        timestamp=datetime.now().isoformat(),
-                        event_type=EventType.OUTPUT,
-                        data={"text": chunk},
-                    )
-                )
+            await self._publish_event(session_id, {"text": chunk})
+        await self._publish_event(session_id, {"text": "\n"})
 
         if (
             output_text
@@ -160,7 +155,6 @@ class CodeActAgent:
         ):
             chunk = "<end_code>\n"
             output_text += chunk
-            print(chunk)
 
         code_action = extract_code_from_text(output_text)
         if code_action is None:
@@ -180,11 +174,17 @@ class CodeActAgent:
         messages.append(tool_call_message)
         try:
             code_result = await python_executor.invoke(code_action)
-            messages.extend(code_result.to_messages(tool_call_id))
+            code_result_messages = code_result.to_messages(tool_call_id)
+            messages.extend(code_result_messages)
+            tool_output: str = str(code_result_messages[0].content)
+            await self._publish_event(
+                session_id, {"text": tool_output + "\n"}, EventType.OBSERVATION
+            )
         except Exception as e:
             messages.append(
                 ChatMessage(role="tool", content=f"Error: {e}", tool_call_id=tool_call_id)
             )
+            await self._publish_event(session_id, {"text": f"Error: {e}\n"}, EventType.OBSERVATION)
 
     async def _handle_final_message(self, messages: ChatMessages) -> None:
         prompt = self.prompts.final
@@ -197,6 +197,21 @@ class CodeActAgent:
             if isinstance(event.content, str):
                 output_text += event.content
         messages.append(ChatMessage(role="assistant", content=output_text))
+
+    async def _publish_event(
+        self, session_id: str, data: Dict[str, Any], event_type: EventType = EventType.OUTPUT
+    ) -> None:
+        if not self.event_bus:
+            return
+        await self.event_bus.publish_event(
+            AgentEvent(
+                session_id=session_id,
+                agent_name=self.name,
+                timestamp=datetime.now().isoformat(),
+                event_type=event_type,
+                data=data,
+            )
+        )
 
     def get_all_agents(self) -> List[Self]:
         agents = [self]

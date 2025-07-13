@@ -10,7 +10,7 @@ from pydantic import BaseModel
 
 from codearkt.codeact import CodeActAgent
 from codearkt.llm import ChatMessage
-from codearkt.event_bus import AgentEventBus
+from codearkt.event_bus import AgentEventBus, EventType
 
 
 event_bus = AgentEventBus()
@@ -56,7 +56,10 @@ def create_agent_endpoint(agent_app: FastAPI, agent_instance: CodeActAgent) -> C
                     try:
                         event = await asyncio.wait_for(queue.get(), timeout=60)
                         if event:
-                            yield event.data["text"]
+                            if event.event_type != EventType.SESSION_END:
+                                yield event.data["text"]
+                            else:
+                                break
                     except asyncio.TimeoutError:
                         break
 
@@ -78,7 +81,6 @@ def get_agent_app(main_agent: CodeActAgent) -> FastAPI:
     agent_cards = []
     for agent in main_agent.get_all_agents():
         agent_cards.append(AgentCard(name=agent.name, description=agent.description))
-        print(f"Setting up agent: {agent.name}")
         agent.set_event_bus(event_bus)
         create_agent_endpoint(agent_app, agent)
 
@@ -105,4 +107,11 @@ def run_server(
     agent: CodeActAgent, mcp_config: Dict[str, Any], host: str = "0.0.0.0", port: int = 5055
 ) -> None:
     app = get_main_app(agent, mcp_config)
-    uvicorn.run(app, host=host, port=port)
+    uvicorn.run(
+        app,
+        host=host,
+        port=port,
+        access_log=False,
+        lifespan="on",
+        ws="none",
+    )

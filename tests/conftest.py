@@ -18,6 +18,9 @@ from codearkt.python_executor import PythonExecutor
 from academia_mcp.tools import arxiv_download, arxiv_search
 
 from codearkt.llm import LLM
+from codearkt.codeact import CodeActAgent
+from codearkt.server import get_agent_app
+
 
 load_dotenv()
 for name in ("httpx", "mcp", "openai", "uvicorn"):
@@ -37,6 +40,15 @@ def gpt_4o() -> LLM:
 @pytest.fixture(scope="module")
 def default_python_executor() -> PythonExecutor:
     return PythonExecutor()
+
+
+def get_nested_agent() -> CodeActAgent:
+    return CodeActAgent(
+        name="nested_agent",
+        description="Call it when you need to get info about papers. Pass only your query as an argument.",
+        llm=LLM(model_name="gpt-4o"),
+        tool_names=("arxiv_download", "arxiv_search"),
+    )
 
 
 def show_image(url: str) -> Dict[str, str]:
@@ -80,6 +92,8 @@ class MCPServerTest:
         mcp_server.add_tool(arxiv_download)
         mcp_server.add_tool(show_image)
         app = mcp_server.streamable_http_app()
+        agent_app = get_agent_app(get_nested_agent())
+        app.mount("/agents", agent_app)
         config = uvicorn.Config(
             app,
             host="0.0.0.0",
@@ -87,6 +101,7 @@ class MCPServerTest:
             log_level="error",
             access_log=False,
             lifespan="on",
+            ws="none",
         )
         self.server: uvicorn.Server = uvicorn.Server(config)
 
