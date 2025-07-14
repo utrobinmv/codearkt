@@ -1,23 +1,27 @@
-import gradio as gr
 import requests
 from typing import Iterator, List, Tuple, Dict, Any
 
+import gradio as gr
+
+from codearkt.event_bus import AgentEvent, EventType
+
 
 HEADERS = {"Content-Type": "application/json", "Accept": "text/event-stream"}
+CODE_TITLE = "Code execution result"
 
 
 def query_manager_agent(
     query: str,
     base_url: str = "http://localhost:5055",
-) -> Iterator[str]:
+) -> Iterator[AgentEvent]:
     url = f"{base_url}/agents/manager"
     payload = {"query": query, "stream": True}
 
     response = requests.post(url, json=payload, headers=HEADERS, stream=True, timeout=30)
     response.raise_for_status()
-    for chunk in response.iter_content(chunk_size=1024, decode_unicode=True):
+    for chunk in response.iter_content(chunk_size=None, decode_unicode=True):
         if chunk:
-            yield chunk
+            yield AgentEvent.model_validate_json(chunk)
 
 
 def user(user_message: str, history: List[gr.ChatMessage]) -> Tuple[str, List[gr.ChatMessage]]:
@@ -25,12 +29,48 @@ def user(user_message: str, history: List[gr.ChatMessage]) -> Tuple[str, List[gr
     return "", new_history
 
 
-def bot(history: List[Dict[str, str]]) -> Iterator[List[Dict[str, Any]]]:
+def bot(history: List[Dict[str, Any]]) -> Iterator[List[Dict[str, Any]]]:
     last_user_message = history[-1]
 
     history.append({"role": "assistant", "content": ""})
-    for content in query_manager_agent(last_user_message["content"]):
-        history[-1]["content"] += content
+    for event in query_manager_agent(last_user_message["content"]):
+        if event.event_type == EventType.TOOL_RESPONSE:
+            assert event.content is not None
+            history.append(
+                {
+                    "role": "assistant",
+                    "content": event.content,
+                    "metadata": {"title": CODE_TITLE, "status": "done"},
+                }
+            )
+            continue
+
+        prev_message = history[-1]
+        prev_message_meta: Dict[str, Any] = prev_message.get("metadata", {})
+        prev_message_title = prev_message_meta.get("title")
+        if prev_message_title == CODE_TITLE:
+            # Start new assistant message
+            assert event.content is not None
+            history.append({"role": "assistant", "content": event.content})
+            continue
+
+        if event.event_type == EventType.AGENT_START:
+            history.append(
+                {"role": "assistant", "content": f'**Starting "{event.agent_name}" agent...**\n'}
+            )
+            continue
+
+        if event.event_type == EventType.AGENT_END:
+            history.append(
+                {
+                    "role": "assistant",
+                    "content": f"**Agent {event.agent_name} completed the task!**\n",
+                }
+            )
+            continue
+
+        assert event.content is not None
+        history[-1]["content"] += event.content
         yield history
 
 

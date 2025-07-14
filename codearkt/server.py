@@ -52,14 +52,16 @@ def create_agent_endpoint(agent_app: FastAPI, agent_instance: CodeActAgent) -> C
             async def stream_response() -> AsyncGenerator[str, None]:
                 asyncio.create_task(run_agent(request.query, session_id))
                 queue = event_bus.subscribe_to_session(session_id)
-                while True:
+                is_agent_end = False
+                is_current_agent = True
+                while not is_agent_end or not is_current_agent:
                     try:
                         event = await asyncio.wait_for(queue.get(), timeout=60)
-                        if event:
-                            if event.event_type != EventType.SESSION_END:
-                                yield event.data["text"]
-                            else:
-                                break
+                        if not event:
+                            continue
+                        yield event.model_dump_json()
+                        is_agent_end = event.event_type == EventType.AGENT_END
+                        is_current_agent = event.agent_name == agent_instance.name
                     except asyncio.TimeoutError:
                         break
 

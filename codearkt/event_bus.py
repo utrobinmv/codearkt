@@ -1,27 +1,24 @@
 import asyncio
 from typing import Any, Dict, Optional
 from enum import StrEnum
-from dataclasses import dataclass
+
+from pydantic import BaseModel
 
 
 class EventType(StrEnum):
-    STEP_START = "step_start"
-    STEP_COMPLETE = "step_complete"
+    AGENT_START = "agent_start"
     TOOL_CALL = "tool_call"
-    ERROR = "error"
     OUTPUT = "output"
-    OBSERVATION = "observation"
-    SESSION_END = "session_end"
+    TOOL_RESPONSE = "observation"
+    AGENT_END = "agent_end"
 
 
-@dataclass
-class AgentEvent:
+class AgentEvent(BaseModel):  # type: ignore
     session_id: str
     agent_name: str
     timestamp: str
     event_type: str
-    data: Dict[str, Any]
-    step_number: Optional[int] = None
+    content: Optional[str] = None
 
 
 class AgentEventBus:

@@ -108,6 +108,7 @@ class CodeActAgent:
         messages: ChatMessages,
         session_id: str,
     ) -> str:
+        await self._publish_event(session_id, None, EventType.AGENT_START)
         python_executor = PythonExecutor(session_id=session_id, tool_names=self.tool_names)
 
         tools = []
@@ -127,7 +128,7 @@ class CodeActAgent:
             await self._handle_final_message(messages)
 
         python_executor.cleanup()
-        await self._publish_event(session_id, {}, EventType.SESSION_END)
+        await self._publish_event(session_id, None, EventType.AGENT_END)
         return str(messages[-1].content)
 
     async def _step(
@@ -145,8 +146,8 @@ class CodeActAgent:
             elif isinstance(event.content, list):
                 chunk = "\n".join([str(item) for item in event.content])
             output_text += chunk
-            await self._publish_event(session_id, {"text": chunk})
-        await self._publish_event(session_id, {"text": "\n"})
+            await self._publish_event(session_id, chunk)
+        await self._publish_event(session_id, "\n")
 
         if (
             output_text
@@ -176,15 +177,13 @@ class CodeActAgent:
             code_result = await python_executor.invoke(code_action)
             code_result_messages = code_result.to_messages(tool_call_id)
             messages.extend(code_result_messages)
-            tool_output: str = str(code_result_messages[0].content)
-            await self._publish_event(
-                session_id, {"text": tool_output + "\n"}, EventType.OBSERVATION
-            )
+            tool_output: str = str(code_result_messages[0].content) + "\n"
+            await self._publish_event(session_id, tool_output, EventType.TOOL_RESPONSE)
         except Exception as e:
             messages.append(
                 ChatMessage(role="tool", content=f"Error: {e}", tool_call_id=tool_call_id)
             )
-            await self._publish_event(session_id, {"text": f"Error: {e}\n"}, EventType.OBSERVATION)
+            await self._publish_event(session_id, f"Error: {e}\n", EventType.TOOL_RESPONSE)
 
     async def _handle_final_message(self, messages: ChatMessages) -> None:
         prompt = self.prompts.final
@@ -199,7 +198,10 @@ class CodeActAgent:
         messages.append(ChatMessage(role="assistant", content=output_text))
 
     async def _publish_event(
-        self, session_id: str, data: Dict[str, Any], event_type: EventType = EventType.OUTPUT
+        self,
+        session_id: str,
+        content: Optional[str] = None,
+        event_type: EventType = EventType.OUTPUT,
     ) -> None:
         if not self.event_bus:
             return
@@ -209,7 +211,7 @@ class CodeActAgent:
                 agent_name=self.name,
                 timestamp=datetime.now().isoformat(),
                 event_type=event_type,
-                data=data,
+                content=content,
             )
         )
 
