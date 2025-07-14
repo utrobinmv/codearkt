@@ -28,13 +28,13 @@ for name in ("httpx", "mcp", "openai", "uvicorn"):
 
 
 @pytest.fixture
-def gpt_4o_mini() -> LLM:
-    return LLM(model_name="gpt-4o-mini")
+def gpt_4o() -> LLM:
+    return LLM(model_name="gpt-4o")
 
 
 @pytest.fixture
-def gpt_4o() -> LLM:
-    return LLM(model_name="gpt-4o")
+def deepseek() -> LLM:
+    return LLM(model_name="deepseek/deepseek-chat-v3-0324")
 
 
 @pytest.fixture(scope="module")

@@ -16,7 +16,7 @@ Give him your task as an only string argument. Follow the task format described 
 
 
 def get_librarian() -> CodeActAgent:
-    llm = LLM(model_name="gpt-4o-mini")
+    llm = LLM(model_name="deepseek/deepseek-chat-v3-0324")
     prompts = Prompts.load(current_dir / "prompts" / "librarian.yaml")
     return CodeActAgent(
         name="librarian",
@@ -28,7 +28,7 @@ def get_librarian() -> CodeActAgent:
 
 
 def get_manager() -> CodeActAgent:
-    llm = LLM(model_name="gpt-4o-mini")
+    llm = LLM(model_name="deepseek/deepseek-chat-v3-0324")
     return CodeActAgent(
         name="manager",
         description="A manager agent",

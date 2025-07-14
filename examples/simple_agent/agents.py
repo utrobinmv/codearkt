@@ -10,6 +10,6 @@ def get_simple_agent() -> CodeActAgent:
     return CodeActAgent(
         name="manager",
         description="A simple agent",
-        llm=LLM(model_name="gpt-4o-mini"),
+        llm=LLM(model_name="deepseek/deepseek-chat-v3-0324"),
         tool_names=["arxiv_download", "arxiv_search"],
     )

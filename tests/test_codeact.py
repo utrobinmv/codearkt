@@ -7,11 +7,11 @@ from tests.conftest import MCPServerTest, get_nested_agent
 
 
 @pytest.mark.asyncio(loop_scope="function")
-async def test_codeact_no_tools(gpt_4o_mini: LLM) -> None:
+async def test_codeact_no_tools(deepseek: LLM) -> None:
     agent = CodeActAgent(
         name="agent",
         description="Just agent",
-        llm=gpt_4o_mini,
+        llm=deepseek,
         server_url=None,
         tool_names=[],
     )
@@ -46,12 +46,12 @@ async def test_codeact_images(gpt_4o: LLM, mcp_server_test: MCPServerTest) -> No
 
 
 @pytest.mark.asyncio(loop_scope="function")
-async def test_multi_agent(gpt_4o_mini: LLM, mcp_server_test: MCPServerTest) -> None:
+async def test_multi_agent(deepseek: LLM, mcp_server_test: MCPServerTest) -> None:
     _ = mcp_server_test
     agent = CodeActAgent(
         name="agent",
         description="Just agent",
-        llm=gpt_4o_mini,
+        llm=deepseek,
         managed_agents=[get_nested_agent()],
     )
     query = "Get the exact abstract of 2409.06820v4."
