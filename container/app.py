@@ -13,8 +13,8 @@ from tools import fetch_tools  # type: ignore
 
 app = FastAPI(title="CodeArkt code runtime")
 
+_tools: Dict[str, Any] = {}
 _globals: Dict[str, Any] = {"__name__": "__main__"}
-_tools_are_fetched = False
 
 
 class Payload(BaseModel):  # type: ignore
@@ -62,18 +62,31 @@ def _execute_code(
 
 @app.post("/exec")  # type: ignore
 async def exec_code(payload: Payload) -> ExecResult:
-    global _tools_are_fetched
-    if not _tools_are_fetched and payload.tool_names:
-        tools = await fetch_tools(tool_names=payload.tool_names)
-        for tool_name, tool_fn in tools.items():
-            _globals[tool_name] = tool_fn
-            if payload.session_id and tool_name.startswith("agent__"):
-                _globals[tool_name] = partial(
-                    tool_fn,
-                    session_id=payload.session_id,
-                )
-        _tools_are_fetched = True
+    # Cache tools
+    global _tools
+    if not _tools and payload.tool_names:
+        _tools = await fetch_tools()
 
+    # Get current tools
+    current_tools = {tool_name: _tools[tool_name] for tool_name in payload.tool_names}
+    for tool_name in payload.tool_names:
+        assert tool_name in current_tools, f"Tool {tool_name} not found"
+
+    for tool_name, tool_fn in current_tools.items():
+        _globals[tool_name] = tool_fn
+        if payload.session_id and tool_name.startswith("agent__"):
+            _globals[tool_name] = partial(
+                tool_fn,
+                session_id=payload.session_id,
+            )
+
+    # Remove unused tools
+    unused_tools = set(_tools.keys()) - set(current_tools.keys())
+    for tool_name in unused_tools:
+        if tool_name in _globals:
+            del _globals[tool_name]
+
+    # Execute code
     loop = asyncio.get_event_loop()
     result = await loop.run_in_executor(None, _execute_code, payload.code, _globals)
 

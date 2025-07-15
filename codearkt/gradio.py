@@ -77,7 +77,7 @@ def bot(history: List[Dict[str, Any]]) -> Iterator[List[Dict[str, Any]]]:
 class GradioUI:
     def create_app(self) -> Any:
         with gr.Blocks(theme=gr.themes.Soft()) as demo:
-            chatbot = gr.Chatbot(type="messages")
+            chatbot = gr.Chatbot(type="messages", resizable=True)
             with gr.Row():
                 with gr.Column():
                     msg = gr.Textbox(
