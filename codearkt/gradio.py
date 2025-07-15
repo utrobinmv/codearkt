@@ -4,24 +4,31 @@ from typing import Iterator, List, Tuple, Dict, Any
 import gradio as gr
 
 from codearkt.event_bus import AgentEvent, EventType
+from contextlib import closing
+import uuid
 
 
 HEADERS = {"Content-Type": "application/json", "Accept": "text/event-stream"}
 CODE_TITLE = "Code execution result"
 
+BASE_URL = "http://localhost:5055"
+
 
 def query_manager_agent(
     query: str,
-    base_url: str = "http://localhost:5055",
+    session_id: str,
+    base_url: str = BASE_URL,
 ) -> Iterator[AgentEvent]:
     url = f"{base_url}/agents/manager"
-    payload = {"query": query, "stream": True}
+    payload = {"query": query, "stream": True, "session_id": session_id}
 
-    response = requests.post(url, json=payload, headers=HEADERS, stream=True, timeout=30)
-    response.raise_for_status()
-    for chunk in response.iter_content(chunk_size=None, decode_unicode=True):
-        if chunk:
-            yield AgentEvent.model_validate_json(chunk)
+    with closing(
+        requests.post(url, json=payload, headers=HEADERS, stream=True, timeout=30)
+    ) as response:
+        response.raise_for_status()
+        for chunk in response.iter_content(chunk_size=None, decode_unicode=True):
+            if chunk:
+                yield AgentEvent.model_validate_json(chunk)
 
 
 def user(user_message: str, history: List[gr.ChatMessage]) -> Tuple[str, List[gr.ChatMessage]]:
@@ -29,11 +36,11 @@ def user(user_message: str, history: List[gr.ChatMessage]) -> Tuple[str, List[gr
     return "", new_history
 
 
-def bot(history: List[Dict[str, Any]]) -> Iterator[List[Dict[str, Any]]]:
+def bot(history: List[Dict[str, Any]], session_id: str) -> Iterator[List[Dict[str, Any]]]:
     last_user_message = history[-1]
 
     history.append({"role": "assistant", "content": ""})
-    for event in query_manager_agent(last_user_message["content"]):
+    for event in query_manager_agent(last_user_message["content"], session_id=session_id):
         if event.event_type == EventType.TOOL_RESPONSE:
             assert event.content is not None
             history.append(
@@ -74,6 +81,13 @@ def bot(history: List[Dict[str, Any]]) -> Iterator[List[Dict[str, Any]]]:
         yield history
 
 
+def stop_agent(session_id: str) -> None:
+    try:
+        requests.post(f"{BASE_URL}/agents/cancel", json={"session_id": session_id}, timeout=5)
+    except requests.RequestException:
+        pass
+
+
 class GradioUI:
     def create_app(self) -> Any:
         with gr.Blocks(theme=gr.themes.Soft()) as demo:
@@ -89,6 +103,9 @@ class GradioUI:
                     with gr.Row():
                         submit = gr.Button("Send")
                         stop = gr.Button("Stop")
+
+            session_state = gr.State(str(uuid.uuid4()))
+
             submit_event = msg.submit(
                 fn=user,
                 inputs=[msg, chatbot],
@@ -98,6 +115,7 @@ class GradioUI:
                 fn=bot,
                 inputs=[
                     chatbot,
+                    session_state,
                 ],
                 outputs=chatbot,
                 queue=True,
@@ -111,14 +129,15 @@ class GradioUI:
                 fn=bot,
                 inputs=[
                     chatbot,
+                    session_state,
                 ],
                 outputs=chatbot,
                 queue=True,
             )
 
             stop.click(
-                fn=None,
-                inputs=None,
+                fn=stop_agent,
+                inputs=[session_state],
                 outputs=None,
                 cancels=[submit_event, submit_click_event],
                 queue=False,

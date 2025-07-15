@@ -10,7 +10,7 @@ from pydantic import BaseModel
 
 from codearkt.codeact import CodeActAgent
 from codearkt.llm import ChatMessage
-from codearkt.event_bus import AgentEventBus, EventType
+from codearkt.event_bus import AgentEventBus
 
 
 event_bus = AgentEventBus()
@@ -37,8 +37,6 @@ AGENT_RESPONSE_HEADERS = {
 
 def create_agent_endpoint(agent_app: FastAPI, agent_instance: CodeActAgent) -> Callable[..., Any]:
     async def run_agent(query: str, session_id: str) -> str:
-        current_task = asyncio.current_task()
-        event_bus.register_task(session_id, current_task)
         return await agent_instance.ainvoke(
             messages=[ChatMessage(role="user", content=query)], session_id=session_id
         )
@@ -50,29 +48,32 @@ def create_agent_endpoint(agent_app: FastAPI, agent_instance: CodeActAgent) -> C
         if request.stream:
 
             async def stream_response() -> AsyncGenerator[str, None]:
-                asyncio.create_task(run_agent(request.query, session_id))
-                queue = event_bus.subscribe_to_session(session_id)
-                is_agent_end = False
-                is_current_agent = True
-                while not is_agent_end or not is_current_agent:
-                    try:
-                        event = await asyncio.wait_for(queue.get(), timeout=60)
-                        if not event:
-                            continue
+                task = asyncio.create_task(run_agent(request.query, session_id))
+                event_bus.register_task(
+                    session_id=session_id,
+                    agent_name=agent_instance.name,
+                    task=task,
+                )
+                try:
+                    async for event in event_bus.stream_events(session_id):
                         yield event.model_dump_json()
-                        is_agent_end = event.event_type == EventType.AGENT_END
-                        is_current_agent = event.agent_name == agent_instance.name
-                    except asyncio.TimeoutError:
-                        break
+                finally:
+                    event_bus.cancel_session(session_id)
 
             return StreamingResponse(
-                stream_response(), media_type="text/event-stream", headers=AGENT_RESPONSE_HEADERS
+                stream_response(),
+                media_type="text/event-stream",
+                headers=AGENT_RESPONSE_HEADERS,
             )
         else:
             result = await run_agent(request.query, session_id)
             return result
 
     return agent_tool  # type: ignore
+
+
+class CancelRequest(BaseModel):  # type: ignore
+    session_id: str
 
 
 def get_agent_app(main_agent: CodeActAgent) -> FastAPI:
@@ -86,10 +87,15 @@ def get_agent_app(main_agent: CodeActAgent) -> FastAPI:
         agent.set_event_bus(event_bus)
         create_agent_endpoint(agent_app, agent)
 
+    async def cancel_session(request: CancelRequest) -> Dict[str, str]:
+        event_bus.cancel_session(request.session_id)
+        return {"status": "cancelled", "session_id": request.session_id}
+
     async def get_agents() -> List[AgentCard]:
         return agent_cards
 
     agent_app.get("/list")(get_agents)
+    agent_app.post("/cancel")(cancel_session)
     return agent_app
 
 

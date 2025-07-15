@@ -135,9 +135,22 @@ class PythonExecutor:
         self.url = self._get_url()
 
         atexit.register(self.cleanup)
+
         if threading.current_thread() is threading.main_thread():
-            signal.signal(signal.SIGTERM, self.cleanup)
-            signal.signal(signal.SIGINT, self.cleanup)
+            self._attach_signal_handler(signal.SIGINT)
+            self._attach_signal_handler(signal.SIGTERM)
+
+    def _attach_signal_handler(self, sig: int) -> None:
+        previous = signal.getsignal(sig)
+
+        def _handler(signum: int, frame: Optional[Any] = None) -> None:
+            try:
+                self.cleanup()
+            finally:
+                if callable(previous):
+                    previous(signum, frame)
+
+        signal.signal(sig, _handler)
 
     async def invoke(self, code: str) -> ExecResult:
         await self._check_tools()
@@ -169,16 +182,15 @@ class PythonExecutor:
             result: ExecResult = ExecResult.model_validate(out)
             return result
 
-    def cleanup(self, signum: Optional[Any] = None, frame: Optional[Any] = None) -> None:
-        if self.container:
-            try:
-                self.container.remove(force=True)
-            except Exception:
-                pass
-            finally:
-                self.container = None
-        if signum == signal.SIGINT:
-            raise KeyboardInterrupt()
+    def cleanup(self) -> None:
+        if self.container is None:
+            return
+        try:
+            self.container.remove(force=True)
+        except Exception:
+            pass
+        finally:
+            self.container = None
 
     def _get_url(self) -> str:
         assert self.container is not None
