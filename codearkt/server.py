@@ -18,7 +18,7 @@ fastmcp_settings.stateless_http = True
 
 
 class AgentRequest(BaseModel):  # type: ignore
-    query: str
+    messages: List[ChatMessage]
     session_id: Optional[str] = None
     stream: bool = False
 
@@ -36,9 +36,9 @@ AGENT_RESPONSE_HEADERS = {
 
 
 def create_agent_endpoint(agent_app: FastAPI, agent_instance: CodeActAgent) -> Callable[..., Any]:
-    async def run_agent(query: str, session_id: str) -> str:
+    async def run_agent(messages: List[ChatMessage], session_id: str) -> str:
         return await agent_instance.ainvoke(
-            messages=[ChatMessage(role="user", content=query)], session_id=session_id
+            messages=messages, session_id=session_id
         )
 
     @agent_app.post(f"/{agent_instance.name}")  # type: ignore
@@ -48,7 +48,7 @@ def create_agent_endpoint(agent_app: FastAPI, agent_instance: CodeActAgent) -> C
         if request.stream:
 
             async def stream_response() -> AsyncGenerator[str, None]:
-                task = asyncio.create_task(run_agent(request.query, session_id))
+                task = asyncio.create_task(run_agent(request.messages, session_id))
                 event_bus.register_task(
                     session_id=session_id,
                     agent_name=agent_instance.name,
@@ -66,7 +66,7 @@ def create_agent_endpoint(agent_app: FastAPI, agent_instance: CodeActAgent) -> C
                 headers=AGENT_RESPONSE_HEADERS,
             )
         else:
-            result = await run_agent(request.query, session_id)
+            result = await run_agent(request.messages, session_id)
             return result
 
     return agent_tool  # type: ignore

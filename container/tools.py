@@ -90,7 +90,11 @@ async def fetch_tools() -> Dict[str, Callable[..., ToolReturnType]]:
 
         def create_call_agent(url: str) -> Callable[..., Any]:
             def _call_agent(query: str, session_id: str) -> Any:
-                payload = {"query": query, "session_id": session_id, "stream": False}
+                payload = {
+                    "messages": [{"role": "user", "content": query}],
+                    "session_id": session_id,
+                    "stream": False,
+                }
                 response = requests.post(url, json=payload)
                 response.raise_for_status()
                 return response.json()
