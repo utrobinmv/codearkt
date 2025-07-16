@@ -37,9 +37,7 @@ AGENT_RESPONSE_HEADERS = {
 
 def create_agent_endpoint(agent_app: FastAPI, agent_instance: CodeActAgent) -> Callable[..., Any]:
     async def run_agent(messages: List[ChatMessage], session_id: str) -> str:
-        return await agent_instance.ainvoke(
-            messages=messages, session_id=session_id
-        )
+        return await agent_instance.ainvoke(messages=messages, session_id=session_id)
 
     @agent_app.post(f"/{agent_instance.name}")  # type: ignore
     async def agent_tool(request: AgentRequest) -> Any:

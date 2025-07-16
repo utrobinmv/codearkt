@@ -5,6 +5,7 @@ import uuid
 import gradio as gr
 
 from codearkt.event_bus import AgentEvent, EventType
+from codearkt.llm import ChatMessage
 from contextlib import closing
 
 
@@ -14,13 +15,14 @@ BASE_URL = "http://localhost:5055"
 
 
 def query_manager_agent(
-    query: str,
+    history: List[ChatMessage],
     *,
     session_id: str | None = None,
     base_url: str = BASE_URL,
 ) -> Iterator[AgentEvent]:
     url = f"{base_url}/agents/manager"
-    payload = {"query": query, "stream": True}
+    serialized_history = [m.model_dump() for m in history]
+    payload = {"messages": serialized_history, "stream": True}
     if session_id is not None:
         payload["session_id"] = session_id
 
@@ -48,7 +50,7 @@ def bot(
     history.append({"role": "assistant", "content": ""})
 
     session_id = str(uuid.uuid4())
-    events = query_manager_agent(message, session_id=session_id)
+    events = query_manager_agent([ChatMessage(role="user", content=message)], session_id=session_id)
     for event in events:
         session_id = event.session_id or session_id
 
@@ -110,6 +112,7 @@ class GradioUI:
                 type="messages",
                 additional_inputs=[session_state],
                 additional_outputs=[session_state],
+                save_history=True,
             )
 
             def _on_stop(session_id: str | None) -> None:
