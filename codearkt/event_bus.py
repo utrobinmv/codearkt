@@ -17,10 +17,8 @@ class EventType(StrEnum):
 class AgentEvent(BaseModel):  # type: ignore
     session_id: str
     agent_name: str
-    timestamp: str
     event_type: str
     content: Optional[str] = None
-    data: Optional[Dict[str, Any]] = None
 
 
 class AgentEventBus:

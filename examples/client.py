@@ -1,7 +1,7 @@
-import requests
-import fire  # type: ignore
 from typing import Iterator
 
+import httpx
+import fire  # type: ignore
 
 from codearkt.event_bus import AgentEvent
 
@@ -16,12 +16,12 @@ def query_manager_agent(
     url = f"{base_url}/agents/manager"
     payload = {"query": query, "stream": True}
 
-    response = requests.post(url, json=payload, headers=HEADERS, stream=True, timeout=30)
-    response.raise_for_status()
-    for chunk in response.iter_content(chunk_size=None, decode_unicode=True):
-        if chunk:
-            event = AgentEvent.model_validate_json(chunk)
-            yield event
+    with httpx.stream("POST", url, json=payload, headers=HEADERS, timeout=60) as response:
+        response.raise_for_status()
+        for chunk in response.iter_text():
+            if chunk:
+                event = AgentEvent.model_validate_json(chunk)
+                yield event
 
 
 DEFAULT_QUERY = "Find an abstract of the PingPong paper by Ilya Gusev"

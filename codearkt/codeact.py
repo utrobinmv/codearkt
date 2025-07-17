@@ -4,7 +4,6 @@ import uuid
 from pathlib import Path
 from dataclasses import dataclass
 from typing import List, Self, Dict, Any, Optional, Sequence
-from datetime import datetime
 
 import yaml
 
@@ -217,7 +216,6 @@ class CodeActAgent:
             AgentEvent(
                 session_id=session_id,
                 agent_name=self.name,
-                timestamp=datetime.now().isoformat(),
                 event_type=event_type,
                 content=content,
             )

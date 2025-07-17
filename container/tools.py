@@ -1,7 +1,7 @@
 import os
 import asyncio
 import functools
-import requests
+import httpx
 import traceback
 from typing import List, Dict, Callable, Any
 
@@ -10,6 +10,7 @@ from mcp.types import ContentBlock
 from mcp.client.streamable_http import streamablehttp_client
 
 SERVER_PORT = os.getenv("SERVER_PORT", "5055")
+AGENT_TIMEOUT = int(os.getenv("AGENT_TIMEOUT", 600))
 SERVER_URL = f"http://host.docker.internal:{SERVER_PORT}"
 
 
@@ -77,8 +78,10 @@ async def fetch_tools() -> Dict[str, Callable[..., ToolReturnType]]:
 
     agent_cards = []
     try:
-        response = requests.get(SERVER_URL + "/agents/list")
-        agent_cards = response.json()
+        async with httpx.AsyncClient(timeout=10) as client:
+            response = await client.get(SERVER_URL + "/agents/list")
+            response.raise_for_status()
+            agent_cards = response.json()
     except Exception:
         print("Failed to fetch agents")
         print(traceback.format_exc())
@@ -95,9 +98,9 @@ async def fetch_tools() -> Dict[str, Callable[..., ToolReturnType]]:
                     "session_id": session_id,
                     "stream": False,
                 }
-                response = requests.post(url, json=payload)
-                response.raise_for_status()
-                return response.json()
+                resp = httpx.post(url, json=payload, timeout=AGENT_TIMEOUT)
+                resp.raise_for_status()
+                return resp.json()
 
             return _call_agent
 

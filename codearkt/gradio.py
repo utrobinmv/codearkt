@@ -1,4 +1,4 @@
-import requests
+import httpx
 from typing import Iterator, List, Dict, Any
 import uuid
 
@@ -6,7 +6,6 @@ import gradio as gr
 
 from codearkt.event_bus import AgentEvent, EventType
 from codearkt.llm import ChatMessage, ToolCall, FunctionCall
-from contextlib import closing
 
 
 HEADERS = {"Content-Type": "application/json", "Accept": "text/event-stream"}
@@ -26,19 +25,17 @@ def query_manager_agent(
     if session_id is not None:
         payload["session_id"] = session_id
 
-    with closing(
-        requests.post(url, json=payload, headers=HEADERS, stream=True, timeout=20)
-    ) as response:
+    with httpx.stream("POST", url, json=payload, headers=HEADERS, timeout=20.0) as response:
         response.raise_for_status()
-        for chunk in response.iter_content(chunk_size=None, decode_unicode=True):
+        for chunk in response.iter_text():
             if chunk:
                 yield AgentEvent.model_validate_json(chunk)
 
 
 def stop_agent(session_id: str) -> None:
     try:
-        requests.post(f"{BASE_URL}/agents/cancel", json={"session_id": session_id}, timeout=5)
-    except requests.RequestException:
+        httpx.post(f"{BASE_URL}/agents/cancel", json={"session_id": session_id}, timeout=5.0)
+    except httpx.HTTPError:
         pass
 
 

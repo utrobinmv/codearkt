@@ -6,11 +6,11 @@ import base64
 from io import BytesIO
 from typing import Generator, Dict
 from contextlib import suppress
-from PIL import Image
 
+import httpx
 import pytest
-import requests
 import uvicorn
+from PIL import Image
 from dotenv import load_dotenv
 from mcp.server.fastmcp import FastMCP
 from sse_starlette.sse import AppStatus
@@ -66,7 +66,7 @@ def show_image(url: str) -> Dict[str, str]:
         url: Path to file or directory inside current work directory or web URL. Should not be absolute.
     """
     assert url.startswith("http")
-    response = requests.get(url)
+    response = httpx.get(url, timeout=10)
     response.raise_for_status()
     image = Image.open(BytesIO(response.content))
     buffer_io = BytesIO()

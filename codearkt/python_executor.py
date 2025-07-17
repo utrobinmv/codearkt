@@ -61,30 +61,26 @@ class ExecResult(BaseModel):  # type: ignore
 
 
 def init_docker() -> docker.DockerClient:
-    global CLIENT
-    if CLIENT is None:
-        CLIENT = docker.from_env()
-
-    assert CLIENT is not None
+    client = docker.from_env()
     try:
-        CLIENT.ping()  # type: ignore
+        client.ping()  # type: ignore
     except docker.errors.DockerException as exc:
         raise RuntimeError(
             "Docker daemon is not running or not accessible – skipping PythonExecutor setup."
         ) from exc
 
     try:
-        CLIENT.images.get(IMAGE)
+        client.images.get(IMAGE)
     except docker.errors.ImageNotFound:
         try:
-            CLIENT.images.pull(IMAGE)
+            client.images.pull(IMAGE)
         except docker.errors.DockerException as exc:
             raise RuntimeError(
                 f"Docker image '{IMAGE}' not found locally and failed to pull automatically."
             ) from exc
     except docker.errors.DockerException as exc:
         raise RuntimeError("Failed to query Docker images – ensure Docker is available.") from exc
-    return CLIENT
+    return client
 
 
 class PythonExecutor:
@@ -94,7 +90,10 @@ class PythonExecutor:
         session_id: Optional[str] = None,
         mcp_server_port: int = 5055,
     ) -> None:
-        client = init_docker()
+        global CLIENT
+        if not CLIENT:
+            CLIENT = init_docker()
+        client = CLIENT
         try:
             net = client.networks.get(NET_NAME)
         except docker.errors.NotFound:
@@ -131,7 +130,6 @@ class PythonExecutor:
             dns=[],
             environment={"SERVER_PORT": str(mcp_server_port)},
         )
-        self.start = time.monotonic()
         self.url = self._get_url()
 
         atexit.register(self.cleanup)
