@@ -5,7 +5,7 @@ import uuid
 import gradio as gr
 
 from codearkt.event_bus import AgentEvent, EventType
-from codearkt.llm import ChatMessage
+from codearkt.llm import ChatMessage, ToolCall, FunctionCall
 from contextlib import closing
 
 
@@ -42,20 +42,50 @@ def stop_agent(session_id: str) -> None:
         pass
 
 
+def clean_real_messages(messages: List[ChatMessage]) -> List[ChatMessage]:
+    prev_message = None
+    for message in messages:
+        if message.role == "assistant" and message.tool_calls:
+            code = message.tool_calls[0].function.arguments
+            if (
+                prev_message
+                and prev_message.role == "assistant"
+                and isinstance(prev_message.content, str)
+            ):
+                prev_message.content = prev_message.content.replace(code, "")
+        prev_message = message
+    return messages
+
+
 def bot(
     message: str,
     history: List[Dict[str, Any]],
     session_id: str | None,
-) -> Iterator[tuple[List[Dict[str, Any]], str | None]]:
+    real_messages: List[ChatMessage],
+) -> Iterator[tuple[List[Dict[str, Any]], str | None, List[ChatMessage]]]:
+    history = []
+    session_id = session_id or str(uuid.uuid4())
+    real_messages = clean_real_messages(real_messages)
+    real_messages.append(ChatMessage(role="user", content=message))
+    events = query_manager_agent(real_messages, session_id=session_id)
+    agent_names: List[str] = []
     history.append({"role": "assistant", "content": ""})
-
-    session_id = str(uuid.uuid4())
-    events = query_manager_agent([ChatMessage(role="user", content=message)], session_id=session_id)
     for event in events:
         session_id = event.session_id or session_id
+        prev_message = history[-1]
+        prev_message_meta: Dict[str, Any] = prev_message.get("metadata", {})
+        prev_message_title = prev_message_meta.get("title")
+        is_root_agent = len(agent_names) == 1
 
         if event.event_type == EventType.TOOL_RESPONSE:
-            assert event.content is not None
+            assert event.content
+            if is_root_agent:
+                assert real_messages[-1].tool_calls
+                tool_call_id = real_messages[-1].tool_calls[0].id
+                assert tool_call_id
+                real_messages.append(
+                    ChatMessage(role="tool", content=event.content, tool_call_id=tool_call_id)
+                )
             history.append(
                 {
                     "role": "assistant",
@@ -63,63 +93,79 @@ def bot(
                     "metadata": {"title": CODE_TITLE, "status": "done"},
                 }
             )
-            yield history, session_id
-            continue
-
-        prev_message = history[-1]
-        prev_message_meta: Dict[str, Any] = prev_message.get("metadata", {})
-        prev_message_title = prev_message_meta.get("title")
-
-        if prev_message_title == CODE_TITLE:
-            # Start new assistant message
-            assert event.content is not None
-            history.append({"role": "assistant", "content": event.content})
-            yield history, session_id
-            continue
-
-        if event.event_type == EventType.AGENT_START:
+        elif event.event_type == EventType.AGENT_START:
+            agent_names.append(event.agent_name)
             history.append(
                 {
                     "role": "assistant",
                     "content": f'**Starting "{event.agent_name}" agent...**\n',
                 }
             )
-            yield history, session_id
-            continue
-
-        if event.event_type == EventType.AGENT_END:
+        elif event.event_type == EventType.AGENT_END:
+            last_agent_name = agent_names.pop()
+            assert last_agent_name == event.agent_name
             history.append(
                 {
                     "role": "assistant",
                     "content": f"**Agent {event.agent_name} completed the task!**\n",
                 }
             )
-            yield history, session_id
-            continue
+        elif event.event_type == EventType.TOOL_CALL:
+            assert event.content
+            tool_call_id = str(uuid.uuid4())[:10]
+            if is_root_agent:
+                real_messages.append(
+                    ChatMessage(
+                        role="assistant",
+                        content="",
+                        tool_calls=[
+                            ToolCall(
+                                id=tool_call_id,
+                                function=FunctionCall(
+                                    name="python_interpreter", arguments=event.content
+                                ),
+                            )
+                        ],
+                    )
+                )
+        else:
+            assert event.event_type == EventType.OUTPUT
+            if prev_message_title == CODE_TITLE:
+                history.append({"role": "assistant", "content": ""})
 
-        assert event.content is not None
-        history[-1]["content"] += event.content
-        yield history, session_id
+            assert event.content is not None
+            history[-1]["content"] += event.content
+
+            if is_root_agent:
+                if real_messages[-1].role == "assistant" and not real_messages[-1].tool_calls:
+                    assert isinstance(real_messages[-1].content, str)
+                    real_messages[-1].content += event.content
+                else:
+                    real_messages.append(ChatMessage(role="assistant", content=event.content))
+
+        yield history, session_id, real_messages
 
 
 class GradioUI:
     def create_app(self) -> Any:
         with gr.Blocks(theme=gr.themes.Soft()) as demo:
-            session_state = gr.State(None)
+            session_id_state = gr.State(None)
+            real_messages_state = gr.State([])
 
             chat_iface = gr.ChatInterface(
                 bot,
                 type="messages",
-                additional_inputs=[session_state],
-                additional_outputs=[session_state],
+                additional_inputs=[session_id_state, real_messages_state],
+                additional_outputs=[session_id_state, real_messages_state],
                 save_history=True,
             )
 
-            def _on_stop(session_id: str | None) -> None:
+            def _on_stop(session_id: str | None) -> str | None:
                 if session_id:
                     stop_agent(session_id)
+                return session_id
 
-            chat_iface.textbox.stop(_on_stop, inputs=[session_state], outputs=None)
+            chat_iface.textbox.stop(_on_stop, inputs=[session_id_state], outputs=[session_id_state])
         return demo
 
     def run(self) -> None:

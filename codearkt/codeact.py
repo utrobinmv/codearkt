@@ -1,4 +1,5 @@
 import re
+import traceback
 import uuid
 from pathlib import Path
 from dataclasses import dataclass
@@ -125,7 +126,7 @@ class CodeActAgent:
             if messages[-1].role == "assistant":
                 break
         else:
-            await self._handle_final_message(messages)
+            await self._handle_final_message(messages, session_id)
 
         python_executor.cleanup()
         await self._publish_event(session_id, None, EventType.AGENT_END)
@@ -146,8 +147,8 @@ class CodeActAgent:
             elif isinstance(event.content, list):
                 chunk = "\n".join([str(item) for item in event.content])
             output_text += chunk
-            await self._publish_event(session_id, chunk)
-        await self._publish_event(session_id, "\n")
+            await self._publish_event(session_id, chunk, EventType.OUTPUT)
+        await self._publish_event(session_id, "\n", EventType.OUTPUT)
 
         if (
             output_text
@@ -172,6 +173,7 @@ class CodeActAgent:
                 )
             ],
         )
+        await self._publish_event(session_id, code_action, EventType.TOOL_CALL)
         messages.append(tool_call_message)
         try:
             code_result = await python_executor.invoke(code_action)
@@ -180,12 +182,13 @@ class CodeActAgent:
             tool_output: str = str(code_result_messages[0].content) + "\n"
             await self._publish_event(session_id, tool_output, EventType.TOOL_RESPONSE)
         except Exception as e:
+            print(traceback.format_exc())
             messages.append(
                 ChatMessage(role="tool", content=f"Error: {e}", tool_call_id=tool_call_id)
             )
             await self._publish_event(session_id, f"Error: {e}\n", EventType.TOOL_RESPONSE)
 
-    async def _handle_final_message(self, messages: ChatMessages) -> None:
+    async def _handle_final_message(self, messages: ChatMessages, session_id: str) -> None:
         prompt = self.prompts.final
         final_message = ChatMessage(role="user", content=prompt)
         messages.append(final_message)
@@ -194,7 +197,12 @@ class CodeActAgent:
         output_text = ""
         async for event in output_stream:
             if isinstance(event.content, str):
-                output_text += event.content
+                chunk = event.content
+            elif isinstance(event.content, list):
+                chunk = "\n".join([str(item) for item in event.content])
+            output_text += chunk
+            await self._publish_event(session_id, chunk, EventType.OUTPUT)
+
         messages.append(ChatMessage(role="assistant", content=output_text))
 
     async def _publish_event(
