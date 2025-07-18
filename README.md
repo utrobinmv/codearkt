@@ -5,7 +5,7 @@
 [![License](https://img.shields.io/github/license/IlyaGusev/codearkt)](LICENSE)
 [![Stars](https://img.shields.io/github/stars/IlyaGusev/codearkt?style=social)](https://github.com/IlyaGusev/codearkt/stargazers)
 
-**CodeArkt** is a battery-included implementation of the **CodeAct** multi-agent architecture. Ship autonomous coding agents that can reason, write, execute & iterate over code - all from a single Python package.
+**CodeArkt** is a battery-included implementation of the **CodeAct** framework with support for the multi-agent architecture. Ship autonomous agents that can reason, write, execute & iterate over code - all from a single Python package.
 
 ---
 
