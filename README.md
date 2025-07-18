@@ -33,6 +33,7 @@ python -m academia_mcp --port 5056 # just an example MCP server
 
 Run a server with a simple agent and connect it to your MCP servers:
 ```python
+import os
 from codearkt.codeact import CodeActAgent
 from codearkt.llm import LLM
 from codearkt.server import run_server
@@ -43,10 +44,12 @@ mcp_config = {
 }
 
 # Create an agent definition
+api_key = os.getenv("OPENROUTER_API_KEY", "")
+assert api_key, "Please provide OpenRouter API key!"
 agent = CodeActAgent(
     name="manager",
     description="A simple agent",
-    llm=LLM(model_name="deepseek/deepseek-chat-v3-0324"),
+    llm=LLM(model_name="deepseek/deepseek-chat-v3-0324", api_key=api_key),
     tool_names=["arxiv_download", "arxiv_search"],
 )
 
@@ -56,16 +59,18 @@ run_server(agent, mcp_config, port=5055)
 
 Client:
 ```python
+import json
 import httpx
 
 headers = {"Content-Type": "application/json", "Accept": "text/event-stream"}
 url = f"http://localhost:5055/agents/manager"
-payload = {"query": "Find an abstract of the 2402.01030 paper", "stream": True}
+payload = {"messages": [{"role": "user", "content": "Find an abstract of the 2402.01030 paper"}], "stream": True}
 
 with httpx.stream("POST", url, json=payload, headers=headers, timeout=600) as response:
     response.raise_for_status()
-    for event in response.iter_text():
-        if event and event["content"]
+    for event_str in response.iter_text():
+        event = json.loads(event_str)
+        if event["content"]:
             print(event["content"], end="", flush=True)
 ```
 
