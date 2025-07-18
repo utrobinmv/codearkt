@@ -25,7 +25,7 @@ def query_manager_agent(
     if session_id is not None:
         payload["session_id"] = session_id
 
-    with httpx.stream("POST", url, json=payload, headers=HEADERS, timeout=20.0) as response:
+    with httpx.stream("POST", url, json=payload, headers=HEADERS) as response:
         response.raise_for_status()
         for chunk in response.iter_text():
             if chunk:
