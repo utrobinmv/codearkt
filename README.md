@@ -1,11 +1,11 @@
-# CodeArkt ⚡️🛠️
+# CodeArkt
 
 [![PyPI](https://img.shields.io/pypi/v/codearkt?label=PyPI%20package)](https://pypi.org/project/codearkt/)
 [![CI](https://github.com/IlyaGusev/codearkt/actions/workflows/python.yml/badge.svg)](https://github.com/IlyaGusev/codearkt/actions/workflows/python.yml)
 [![License](https://img.shields.io/github/license/IlyaGusev/codearkt)](LICENSE)
 [![Stars](https://img.shields.io/github/stars/IlyaGusev/codearkt?style=social)](https://github.com/IlyaGusev/codearkt/stargazers)
 
-> **CodeArkt** is a battery-included implementation of the **CodeAct** multi-agent architecture. Ship autonomous coding agents that can reason, write, execute & iterate over code – all from a single Python package.
+**CodeArkt** is a battery-included implementation of the **CodeAct** multi-agent architecture. Ship autonomous coding agents that can reason, write, execute & iterate over code - all from a single Python package.
 
 ---
 
@@ -27,7 +27,12 @@ Install the package:
 pip install codearkt  # requires Python ≥ 3.12
 ```
 
-Write a simple agent:
+Run your MCP servers:
+```bash
+python -m academia_mcp --port 5056 # just an example MCP server
+```
+
+Run a server with a simple agent and connect it to your MCP servers:
 ```python
 from codearkt.codeact import CodeActAgent
 from codearkt.llm import LLM
@@ -47,10 +52,25 @@ agent = CodeActAgent(
 )
 
 # Run the server with MCP proxy and agentic endpoints
-run_server(agent, mcp_config)
+run_server(agent, mcp_config, port=5055)
 ```
 
-Within seconds you will see agents collaborating, executing Python snippets, and streaming the results back to your console / web chat.
+Client:
+```python
+import httpx
+
+headers = {"Content-Type": "application/json", "Accept": "text/event-stream"}
+url = f"http://localhost:5055/agents/manager"
+payload = {"query": "Find an abstract of the 2402.01030 paper", "stream": True}
+
+with httpx.stream("POST", url, json=payload, headers=headers, timeout=600) as response:
+    response.raise_for_status()
+    for event in response.iter_text():
+        if event and event["content"]
+            print(event["content"], end="", flush=True)
+```
+
+Within seconds, you will see agents collaborating, executing Python snippets, and streaming the results back to your console.
 
 ---
 
