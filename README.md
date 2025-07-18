@@ -11,11 +11,10 @@
 
 ## ✨ Why CodeArkt?
 
-* **True multi-agent orchestration** – coordinate unlimited specialist agents with a single *manager* agent.
-* **Live Python sandbox** – secure, ephemeral execution environment with real-time streaming of stdout/stderr back to the LLM.
-* **Event-driven core** – subscribe to granular `AgentEvent`s (start, output, tool call, error) and build your own dashboards.
-* **First-class tool ecosystem** – auto-discover & register [MCP](https://github.com/academia-org/mcp) tools or your own custom functions.
-* **Drop-dead simple UI** – launch an elegant Gradio chat in one line: `python -m codearkt.gradio`.
+* **Multi-agent orchestration** – coordinate hierarchies of specialist agents.
+* **Secure Python sandbox** – secure, ephemeral Docker execution environment for code actions.
+* **First-class tool ecosystem** – auto-discover & register MCP tools.
+* **Drop-dead simple UI** – launch an elegant Gradio chat.
 * **Production ready** – typed codebase (`mypy --strict`), CI, tests, Docker & Apache-2.0 license.
 
 ---
