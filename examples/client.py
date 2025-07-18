@@ -14,7 +14,7 @@ def query_manager_agent(
     base_url: str = "http://localhost:5055",
 ) -> Iterator[AgentEvent]:
     url = f"{base_url}/agents/manager"
-    payload = {"query": query, "stream": True}
+    payload = {"messages": [{"role": "user", "content": query}], "stream": True}
 
     with httpx.stream("POST", url, json=payload, headers=HEADERS, timeout=60) as response:
         response.raise_for_status()
