@@ -36,9 +36,6 @@ AGENT_RESPONSE_HEADERS = {
 
 
 def create_agent_endpoint(agent_app: FastAPI, agent_instance: CodeActAgent) -> Callable[..., Any]:
-    async def run_agent(messages: List[ChatMessage], session_id: str) -> str:
-        return await agent_instance.ainvoke(messages=messages, session_id=session_id)
-
     @agent_app.post(f"/{agent_instance.name}")  # type: ignore
     async def agent_tool(request: AgentRequest) -> Any:
         session_id = request.session_id or str(uuid.uuid4())
@@ -46,7 +43,11 @@ def create_agent_endpoint(agent_app: FastAPI, agent_instance: CodeActAgent) -> C
         if request.stream:
 
             async def stream_response() -> AsyncGenerator[str, None]:
-                task = asyncio.create_task(run_agent(request.messages, session_id))
+                task = asyncio.create_task(
+                    agent_instance.ainvoke(
+                        messages=request.messages, session_id=session_id, event_bus=event_bus
+                    )
+                )
                 event_bus.register_task(
                     session_id=session_id,
                     agent_name=agent_instance.name,
@@ -64,7 +65,9 @@ def create_agent_endpoint(agent_app: FastAPI, agent_instance: CodeActAgent) -> C
                 headers=AGENT_RESPONSE_HEADERS,
             )
         else:
-            result = await run_agent(request.messages, session_id)
+            result = await agent_instance.ainvoke(
+                messages=request.messages, session_id=session_id, event_bus=event_bus
+            )
             return result
 
     return agent_tool  # type: ignore
@@ -82,7 +85,6 @@ def get_agent_app(main_agent: CodeActAgent) -> FastAPI:
     agent_cards = []
     for agent in main_agent.get_all_agents():
         agent_cards.append(AgentCard(name=agent.name, description=agent.description))
-        agent.set_event_bus(event_bus)
         create_agent_endpoint(agent_app, agent)
 
     async def cancel_session(request: CancelRequest) -> Dict[str, str]:

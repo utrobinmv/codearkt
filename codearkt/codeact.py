@@ -1,5 +1,4 @@
 import re
-import traceback
 import uuid
 from pathlib import Path
 from dataclasses import dataclass
@@ -12,7 +11,7 @@ from jinja2 import Template
 
 from codearkt.python_executor import PythonExecutor
 from codearkt.tools import fetch_tools
-from codearkt.event_bus import AgentEventBus, AgentEvent, EventType
+from codearkt.event_bus import AgentEventBus, EventType
 from codearkt.llm import LLM, ChatMessages, ChatMessage, FunctionCall, ToolCall
 
 
@@ -22,7 +21,7 @@ CURRENT_DIR = Path(__file__).parent
 
 
 def extract_code_from_text(text: str) -> str | None:
-    pattern = r"Code:\n*```(?:py|python)?\s*\n(.*?)\n```"
+    pattern = r"[C|c]ode:\n*```(?:py|python)?\s*\n(.*?)\n```"
     matches = re.findall(pattern, text, re.DOTALL)
     if matches:
         return "\n\n".join(match.strip() for match in matches)
@@ -36,18 +35,20 @@ def fix_code_actions(messages: List[ChatMessage]) -> List[ChatMessage]:
         if not message.tool_calls:
             continue
         for tool_call in message.tool_calls:
-            if tool_call.function.name == "python_interpreter":
-                code_action = str(tool_call.function.arguments).strip()
-                if not code_action.startswith("```"):
-                    code_action = code_action.lstrip("`")
-                    code_action = "```" + code_action
-                if not code_action.endswith("```"):
-                    code_action = code_action.rstrip("`")
-                    code_action += "```"
-                if isinstance(message.content, str):
-                    message.content += "\n" + code_action
-                else:
-                    message.content.append({"text": code_action})
+            if tool_call.function.name != "python_interpreter":
+                continue
+            code_action = str(tool_call.function.arguments).strip()
+            if not code_action.startswith("```"):
+                code_action = code_action.lstrip("`")
+                code_action = "```" + code_action
+            if not code_action.endswith("```"):
+                code_action = code_action.rstrip("`")
+                code_action += "```"
+            code_action = code_action.strip() + "<end_code>"
+            if isinstance(message.content, str):
+                message.content += "\n" + code_action
+            else:
+                message.content.append({"text": code_action})
         message.tool_calls = []
     return messages
 
@@ -93,22 +94,28 @@ class CodeActAgent:
         self.max_iterations = max_iterations
         self.server_url = server_url
         self.managed_agents: Optional[List[Self]] = managed_agents
-        self.event_bus: Optional[AgentEventBus] = None
         if self.managed_agents:
             for agent in self.managed_agents:
                 agent_tool_name = "agent__" + agent.name
                 if agent_tool_name not in self.tool_names:
                     self.tool_names.append(agent_tool_name)
 
-    def set_event_bus(self, event_bus: AgentEventBus) -> None:
-        self.event_bus = event_bus
+    def get_all_agents(self) -> List[Self]:
+        agents = [self]
+        if self.managed_agents:
+            agents.extend(self.managed_agents)
+            for agent in self.managed_agents:
+                agents.extend(agent.get_all_agents())
+        named_agents = {agent.name: agent for agent in agents}
+        return list(named_agents.values())
 
     async def ainvoke(
         self,
         messages: ChatMessages,
         session_id: str,
+        event_bus: AgentEventBus | None = None,
     ) -> str:
-        await self._publish_event(session_id, None, EventType.AGENT_START)
+        await self._publish_event(event_bus, session_id, EventType.AGENT_START)
         python_executor = PythonExecutor(session_id=session_id, tool_names=self.tool_names)
 
         tools = []
@@ -121,14 +128,14 @@ class CodeActAgent:
         messages = [ChatMessage(role="system", content=self.prompts.system)] + messages
 
         for _ in range(self.max_iterations):
-            await self._step(messages, python_executor, session_id)
+            await self._step(messages, python_executor, session_id, event_bus)
             if messages[-1].role == "assistant":
                 break
         else:
-            await self._handle_final_message(messages, session_id)
+            await self._handle_final_message(messages, session_id, event_bus)
 
         python_executor.cleanup()
-        await self._publish_event(session_id, None, EventType.AGENT_END)
+        await self._publish_event(event_bus, session_id, EventType.AGENT_END)
         return str(messages[-1].content)
 
     async def _step(
@@ -136,6 +143,7 @@ class CodeActAgent:
         messages: ChatMessages,
         python_executor: PythonExecutor,
         session_id: str,
+        event_bus: AgentEventBus | None = None,
     ) -> None:
         output_text = ""
         output_stream = self.llm.astream(messages, stop=STOP_SEQUENCES)
@@ -146,8 +154,8 @@ class CodeActAgent:
             elif isinstance(event.content, list):
                 chunk = "\n".join([str(item) for item in event.content])
             output_text += chunk
-            await self._publish_event(session_id, chunk, EventType.OUTPUT)
-        await self._publish_event(session_id, "\n", EventType.OUTPUT)
+            await self._publish_event(event_bus, session_id, EventType.OUTPUT, chunk)
+        await self._publish_event(event_bus, session_id, EventType.OUTPUT, "\n")
 
         if (
             output_text
@@ -172,22 +180,28 @@ class CodeActAgent:
                 )
             ],
         )
-        await self._publish_event(session_id, code_action, EventType.TOOL_CALL)
+        await self._publish_event(event_bus, session_id, EventType.TOOL_CALL, code_action)
         messages.append(tool_call_message)
         try:
             code_result = await python_executor.invoke(code_action)
             code_result_messages = code_result.to_messages(tool_call_id)
             messages.extend(code_result_messages)
             tool_output: str = str(code_result_messages[0].content) + "\n"
-            await self._publish_event(session_id, tool_output, EventType.TOOL_RESPONSE)
+            await self._publish_event(event_bus, session_id, EventType.TOOL_RESPONSE, tool_output)
         except Exception as e:
-            print(traceback.format_exc())
             messages.append(
                 ChatMessage(role="tool", content=f"Error: {e}", tool_call_id=tool_call_id)
             )
-            await self._publish_event(session_id, f"Error: {e}\n", EventType.TOOL_RESPONSE)
+            await self._publish_event(
+                event_bus, session_id, EventType.TOOL_RESPONSE, f"Error: {e}\n"
+            )
 
-    async def _handle_final_message(self, messages: ChatMessages, session_id: str) -> None:
+    async def _handle_final_message(
+        self,
+        messages: ChatMessages,
+        session_id: str,
+        event_bus: AgentEventBus | None = None,
+    ) -> None:
         prompt = self.prompts.final
         final_message = ChatMessage(role="user", content=prompt)
         messages.append(final_message)
@@ -200,32 +214,22 @@ class CodeActAgent:
             elif isinstance(event.content, list):
                 chunk = "\n".join([str(item) for item in event.content])
             output_text += chunk
-            await self._publish_event(session_id, chunk, EventType.OUTPUT)
+            await self._publish_event(event_bus, session_id, EventType.OUTPUT, chunk)
 
         messages.append(ChatMessage(role="assistant", content=output_text))
 
     async def _publish_event(
         self,
+        event_bus: AgentEventBus | None,
         session_id: str,
-        content: Optional[str] = None,
         event_type: EventType = EventType.OUTPUT,
+        content: Optional[str] = None,
     ) -> None:
-        if not self.event_bus:
+        if not event_bus:
             return
-        await self.event_bus.publish_event(
-            AgentEvent(
-                session_id=session_id,
-                agent_name=self.name,
-                event_type=event_type,
-                content=content,
-            )
+        await event_bus.publish_event(
+            session_id=session_id,
+            agent_name=self.name,
+            event_type=event_type,
+            content=content,
         )
-
-    def get_all_agents(self) -> List[Self]:
-        agents = [self]
-        if self.managed_agents:
-            agents.extend(self.managed_agents)
-            for agent in self.managed_agents:
-                agents.extend(agent.get_all_agents())
-        named_agents = {agent.name: agent for agent in agents}
-        return list(named_agents.values())

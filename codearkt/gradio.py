@@ -145,7 +145,7 @@ def bot(
 
 class GradioUI:
     def create_app(self) -> Any:
-        with gr.Blocks(theme=gr.themes.Soft()) as demo:
+        with gr.Blocks(theme=gr.themes.Soft(), fill_height=True, fill_width=True) as demo:
             session_id_state = gr.State(None)
             real_messages_state = gr.State([])
 

@@ -27,7 +27,6 @@ print(proc.stderr)
 """
 
 
-@pytest.mark.asyncio(loop_scope="function")
 async def test_python_executor_basic(
     default_python_executor: PythonExecutor,
 ) -> None:
@@ -37,7 +36,6 @@ async def test_python_executor_basic(
     assert result2.stdout == "Variable still here: Answer 1"
 
 
-@pytest.mark.asyncio(loop_scope="function")
 async def test_python_executor_mcp_invokation_no_tools(
     mcp_server_test: MCPServerTest,
     default_python_executor: PythonExecutor,
@@ -52,7 +50,6 @@ async def test_python_executor_mcp_invokation_no_tools(
     assert "Error" in result.error
 
 
-@pytest.mark.asyncio(loop_scope="function")
 async def test_python_executor_pip_install(
     default_python_executor: PythonExecutor,
 ) -> None:
@@ -60,7 +57,6 @@ async def test_python_executor_pip_install(
     assert "ERROR" in result.stdout, result.stdout
 
 
-@pytest.mark.asyncio(loop_scope="function")
 async def test_python_executor_result_expr(
     default_python_executor: PythonExecutor,
 ) -> None:
@@ -68,7 +64,6 @@ async def test_python_executor_result_expr(
     assert result.result == 4
 
 
-@pytest.mark.asyncio(loop_scope="function")
 async def test_python_executor_result_dict(
     default_python_executor: PythonExecutor,
 ) -> None:
@@ -76,7 +71,6 @@ async def test_python_executor_result_dict(
     assert result.result == {"a": 4}
 
 
-@pytest.mark.asyncio(loop_scope="function")
 async def test_python_executor_mcp_invokation(
     mcp_server_test: MCPServerTest,
 ) -> None:
@@ -89,7 +83,6 @@ async def test_python_executor_mcp_invokation(
     )
 
 
-@pytest.mark.asyncio(loop_scope="function")
 async def test_python_executor_non_existing_tool() -> None:
     executor = PythonExecutor(tool_names=["arxiv_download"])
     with pytest.raises(ValueError):

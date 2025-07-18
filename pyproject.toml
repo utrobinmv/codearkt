@@ -7,13 +7,14 @@ name = "codearkt"
 version = "0.0.1"
 description = "CodeAct implementation with Docker and MCP"
 readme = "README.md"
+license = {file = "LICENSE"}
 authors = [
     {name = "Ilya Gusev", email = "phoenixilya@gmail.com"}
 ]
 requires-python = ">=3.12"
 classifiers = [
     "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: MIT License",
+    "License :: OSI Approved :: Apache Software License",
     "Operating System :: OS Independent",
 ]
 dependencies = [
@@ -59,3 +60,7 @@ follow_imports = "skip"
 module = "fastapi.*"
 ignore_missing_imports = true
 follow_imports = "skip"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_test_loop_scope = "function"

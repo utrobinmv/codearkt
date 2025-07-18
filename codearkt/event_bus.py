@@ -41,7 +41,19 @@ class AgentEventBus:
                 task = self.running_tasks[session_id].pop()
                 task.cancel()
 
-    async def publish_event(self, event: AgentEvent) -> None:
+    async def publish_event(
+        self,
+        session_id: str,
+        agent_name: str,
+        event_type: EventType = EventType.OUTPUT,
+        content: Optional[str] = None,
+    ) -> None:
+        event = AgentEvent(
+            session_id=session_id,
+            agent_name=agent_name,
+            event_type=event_type,
+            content=content,
+        )
         if event.session_id not in self.queues:
             self.queues[event.session_id] = asyncio.Queue()
         await self.queues[event.session_id].put(event)
