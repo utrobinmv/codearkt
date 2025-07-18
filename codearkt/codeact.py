@@ -128,11 +128,11 @@ class CodeActAgent:
         messages = [ChatMessage(role="system", content=self.prompts.system)] + messages
 
         for _ in range(self.max_iterations):
-            await self._step(messages, python_executor, session_id, event_bus)
+            messages = await self._step(messages, python_executor, session_id, event_bus)
             if messages[-1].role == "assistant":
                 break
         else:
-            await self._handle_final_message(messages, session_id, event_bus)
+            messages = await self._handle_final_message(messages, session_id, event_bus)
 
         python_executor.cleanup()
         await self._publish_event(event_bus, session_id, EventType.AGENT_END)
@@ -144,7 +144,7 @@ class CodeActAgent:
         python_executor: PythonExecutor,
         session_id: str,
         event_bus: AgentEventBus | None = None,
-    ) -> None:
+    ) -> ChatMessages:
         output_text = ""
         output_stream = self.llm.astream(messages, stop=STOP_SEQUENCES)
         tool_call_id = f"toolu_{str(uuid.uuid4())[:8]}"
@@ -168,7 +168,7 @@ class CodeActAgent:
         code_action = extract_code_from_text(output_text)
         if code_action is None:
             messages.append(ChatMessage(role="assistant", content=output_text))
-            return
+            return messages
 
         tool_call_message = ChatMessage(
             role="assistant",
@@ -195,13 +195,14 @@ class CodeActAgent:
             await self._publish_event(
                 event_bus, session_id, EventType.TOOL_RESPONSE, f"Error: {e}\n"
             )
+        return messages
 
     async def _handle_final_message(
         self,
         messages: ChatMessages,
         session_id: str,
         event_bus: AgentEventBus | None = None,
-    ) -> None:
+    ) -> ChatMessages:
         prompt = self.prompts.final
         final_message = ChatMessage(role="user", content=prompt)
         messages.append(final_message)
@@ -217,6 +218,7 @@ class CodeActAgent:
             await self._publish_event(event_bus, session_id, EventType.OUTPUT, chunk)
 
         messages.append(ChatMessage(role="assistant", content=output_text))
+        return messages
 
     async def _publish_event(
         self,
