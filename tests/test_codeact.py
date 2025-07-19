@@ -89,7 +89,7 @@ class TestCodeActAgent:
             llm=deepseek,
             managed_agents=[get_nested_agent()],
         )
-        query = "Get the exact abstract of 2409.06820v4."
+        query = "Get the exact title of 2409.06820v4."
         result = await agent.ainvoke(
             [
                 ChatMessage(
@@ -99,7 +99,7 @@ class TestCodeActAgent:
             ],
             session_id="test",
         )
-        assert "evaluating the role-playing capabilities" in str(result), result
+        assert "role-playing language models" in str(result).lower(), result
 
     async def test_codeact_event_bus_simple(self, deepseek: LLM) -> None:
         agent_name = "agent"

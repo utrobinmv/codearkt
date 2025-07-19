@@ -1,4 +1,5 @@
 import re
+import copy
 import uuid
 from pathlib import Path
 from dataclasses import dataclass
@@ -115,6 +116,7 @@ class CodeActAgent:
         session_id: str,
         event_bus: AgentEventBus | None = None,
     ) -> str:
+        messages = copy.deepcopy(messages)
         await self._publish_event(event_bus, session_id, EventType.AGENT_START)
         python_executor = PythonExecutor(session_id=session_id, tool_names=self.tool_names)
 
@@ -128,11 +130,13 @@ class CodeActAgent:
         messages = [ChatMessage(role="system", content=self.prompts.system)] + messages
 
         for _ in range(self.max_iterations):
-            messages = await self._step(messages, python_executor, session_id, event_bus)
+            new_messages = await self._step(messages, python_executor, session_id, event_bus)
+            messages.extend(new_messages)
             if messages[-1].role == "assistant":
                 break
         else:
-            messages = await self._handle_final_message(messages, session_id, event_bus)
+            new_messages = await self._handle_final_message(messages, session_id, event_bus)
+            messages.extend(new_messages)
 
         python_executor.cleanup()
         await self._publish_event(event_bus, session_id, EventType.AGENT_END)
@@ -166,9 +170,10 @@ class CodeActAgent:
             output_text += chunk
 
         code_action = extract_code_from_text(output_text)
+        new_messages = []
         if code_action is None:
-            messages.append(ChatMessage(role="assistant", content=output_text))
-            return messages
+            new_messages.append(ChatMessage(role="assistant", content=output_text))
+            return new_messages
 
         tool_call_message = ChatMessage(
             role="assistant",
@@ -181,21 +186,21 @@ class CodeActAgent:
             ],
         )
         await self._publish_event(event_bus, session_id, EventType.TOOL_CALL, code_action)
-        messages.append(tool_call_message)
+        new_messages.append(tool_call_message)
         try:
             code_result = await python_executor.invoke(code_action)
             code_result_messages = code_result.to_messages(tool_call_id)
-            messages.extend(code_result_messages)
+            new_messages.extend(code_result_messages)
             tool_output: str = str(code_result_messages[0].content) + "\n"
             await self._publish_event(event_bus, session_id, EventType.TOOL_RESPONSE, tool_output)
         except Exception as e:
-            messages.append(
+            new_messages.append(
                 ChatMessage(role="tool", content=f"Error: {e}", tool_call_id=tool_call_id)
             )
             await self._publish_event(
                 event_bus, session_id, EventType.TOOL_RESPONSE, f"Error: {e}\n"
             )
-        return messages
+        return new_messages
 
     async def _handle_final_message(
         self,
@@ -205,9 +210,7 @@ class CodeActAgent:
     ) -> ChatMessages:
         prompt = self.prompts.final
         final_message = ChatMessage(role="user", content=prompt)
-        messages.append(final_message)
-
-        output_stream = self.llm.astream(messages, stop=STOP_SEQUENCES)
+        output_stream = self.llm.astream(messages + [final_message], stop=STOP_SEQUENCES)
         output_text = ""
         async for event in output_stream:
             if isinstance(event.content, str):
@@ -216,9 +219,7 @@ class CodeActAgent:
                 chunk = "\n".join([str(item) for item in event.content])
             output_text += chunk
             await self._publish_event(event_bus, session_id, EventType.OUTPUT, chunk)
-
-        messages.append(ChatMessage(role="assistant", content=output_text))
-        return messages
+        return [ChatMessage(role="assistant", content=output_text)]
 
     async def _publish_event(
         self,

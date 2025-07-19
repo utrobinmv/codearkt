@@ -30,6 +30,10 @@ class ChatMessage(BaseModel):  # type: ignore
     tool_calls: Optional[List[ToolCall]] = None
     tool_call_id: Optional[str] = None
 
+    def __str__(self) -> str:
+        dump: str = self.model_dump_json()
+        return dump
+
 
 ChatMessages = List[ChatMessage]
 
