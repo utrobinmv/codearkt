@@ -16,13 +16,15 @@ from codearkt.event_bus import AgentEventBus, EventType
 from codearkt.llm import LLM, ChatMessages, ChatMessage, FunctionCall, ToolCall
 
 
-STOP_SEQUENCES = ["<end_code>", "Observation:", "Calling tools:"]
+END_CODE_SEQUENCE = "<end_code>"
+END_PLAN_SEQUENCE = "<end_plan>"
+STOP_SEQUENCES = [END_CODE_SEQUENCE, "Observation:", "Calling tools:"]
 DEFAULT_SERVER_URL = "http://localhost:5055"
 CURRENT_DIR = Path(__file__).parent
 
 
 def extract_code_from_text(text: str) -> str | None:
-    pattern = r"[C|c]ode:\n*```(?:py|python)?\s*\n(.*?)\n```"
+    pattern = r"[C|c]ode[\*]*:\n*```(?:py|python)?\s*\n(.*?)\n```"
     matches = re.findall(pattern, text, re.DOTALL)
     if matches:
         return "\n\n".join(match.strip() for match in matches)
@@ -45,7 +47,7 @@ def fix_code_actions(messages: List[ChatMessage]) -> List[ChatMessage]:
             if not code_action.endswith("```"):
                 code_action = code_action.rstrip("`")
                 code_action += "```"
-            code_action = code_action.strip() + "<end_code>"
+            code_action = code_action.strip() + END_CODE_SEQUENCE
             if isinstance(message.content, str):
                 message.content += "\n" + code_action
             else:
@@ -56,19 +58,20 @@ def fix_code_actions(messages: List[ChatMessage]) -> List[ChatMessage]:
 
 @dataclass
 class Prompts:
-    system: str
-    final: str
+    system: Template
+    final: Template
+    initial_plan: Optional[Template] = None
+    plan_prefix: Optional[Template] = None
 
     @classmethod
     def load(cls, path: str | Path) -> Self:
         with open(path) as f:
             template = f.read()
         templates: Dict[str, Any] = yaml.safe_load(template)
-        return cls(**templates)
-
-    def format(self, tools: List[Tool]) -> None:
-        system_template = Template(self.system)
-        self.system = system_template.render(tools=tools)
+        wrapped_templates = {}
+        for key, value in templates.items():
+            wrapped_templates[key] = Template(value)
+        return cls(**wrapped_templates)
 
     @classmethod
     def default(cls) -> Self:
@@ -84,6 +87,7 @@ class CodeActAgent:
         tool_names: Sequence[str] = tuple(),
         prompts: Optional[Prompts] = None,
         max_iterations: int = 10,
+        planning_interval: Optional[int] = None,
         server_url: Optional[str] = DEFAULT_SERVER_URL,
         managed_agents: Optional[List[Self]] = None,
     ) -> None:
@@ -93,6 +97,7 @@ class CodeActAgent:
         self.prompts: Prompts = prompts or Prompts.default()
         self.tool_names = list(tool_names)
         self.max_iterations = max_iterations
+        self.planning_interval = planning_interval
         self.server_url = server_url
         self.managed_agents: Optional[List[Self]] = managed_agents
         if self.managed_agents:
@@ -124,12 +129,18 @@ class CodeActAgent:
         if self.server_url:
             tools = await fetch_tools(self.server_url)
             tools = [tool for tool in tools if tool.name in self.tool_names]
-        self.prompts.format(tools=tools)
+        system_prompt = self.prompts.system.render(tools=tools)
 
         messages = fix_code_actions(messages)
-        messages = [ChatMessage(role="system", content=self.prompts.system)] + messages
+        messages = [ChatMessage(role="system", content=system_prompt)] + messages
 
-        for _ in range(self.max_iterations):
+        for step_number in range(1, self.max_iterations + 1):
+            if self.planning_interval is not None and (
+                step_number == 1 or (step_number - 1) % self.planning_interval == 0
+            ):
+                new_messages = await self._run_planning_step(messages, tools, session_id, event_bus)
+                messages.extend(new_messages)
+
             new_messages = await self._step(messages, python_executor, session_id, event_bus)
             messages.extend(new_messages)
             if messages[-1].role == "assistant":
@@ -164,9 +175,9 @@ class CodeActAgent:
         if (
             output_text
             and output_text.strip().endswith("```")
-            and not output_text.strip().endswith("<end_code>")
+            and not output_text.strip().endswith(END_CODE_SEQUENCE)
         ):
-            chunk = "<end_code>\n"
+            chunk = END_CODE_SEQUENCE + "\n"
             output_text += chunk
 
         code_action = extract_code_from_text(output_text)
@@ -208,7 +219,7 @@ class CodeActAgent:
         session_id: str,
         event_bus: AgentEventBus | None = None,
     ) -> ChatMessages:
-        prompt = self.prompts.final
+        prompt: str = self.prompts.final.render()
         final_message = ChatMessage(role="user", content=prompt)
         output_stream = self.llm.astream(messages + [final_message], stop=STOP_SEQUENCES)
         output_text = ""
@@ -219,6 +230,39 @@ class CodeActAgent:
                 chunk = "\n".join([str(item) for item in event.content])
             output_text += chunk
             await self._publish_event(event_bus, session_id, EventType.OUTPUT, chunk)
+        return [ChatMessage(role="assistant", content=output_text)]
+
+    async def _run_planning_step(
+        self,
+        messages: ChatMessages,
+        tools: List[Tool],
+        session_id: str,
+        event_bus: AgentEventBus | None = None,
+    ) -> ChatMessages:
+        assert (
+            self.prompts.initial_plan is not None
+        ), "Planning prompt is not set, but planning is enabled"
+        assert (
+            self.prompts.plan_prefix is not None
+        ), "Plan prefix is not set, but planning is enabled"
+
+        conversation = "\n\n".join([f"{m.role}: {m.content}" for m in messages])
+        planning_prompt = self.prompts.initial_plan.render(conversation=conversation, tools=tools)
+        input_messages = [ChatMessage(role="user", content=planning_prompt)]
+
+        output_stream = self.llm.astream(input_messages, stop=[END_PLAN_SEQUENCE])
+
+        plan_prefix = self.prompts.plan_prefix.render().strip() + "\n\n"
+        await self._publish_event(event_bus, session_id, EventType.OUTPUT, plan_prefix)
+        output_text = plan_prefix
+
+        async for event in output_stream:
+            assert isinstance(event.content, str)
+            chunk = event.content
+            output_text += chunk
+            await self._publish_event(event_bus, session_id, EventType.OUTPUT, chunk)
+        await self._publish_event(event_bus, session_id, EventType.OUTPUT, "\n\n")
+
         return [ChatMessage(role="assistant", content=output_text)]
 
     async def _publish_event(

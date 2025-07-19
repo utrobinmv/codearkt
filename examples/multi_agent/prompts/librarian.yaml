@@ -77,3 +77,42 @@ system: |
 final: |
   Based on the above, please provide an answer to the original user task.
   Do not call any tools.
+
+initial_plan: |
+  Given a conversation between a user and an agent:
+  ```
+  {{conversation}}
+  ```
+
+  First, build a survey of facts known or needed to solve the task.
+  Provide fact survey using exactly this structure:
+  ---
+  1. Facts given in the task
+  What we know from task description
+  2. Facts to look up
+  What to look up + sources
+  3. Facts to derive
+  What to calculate/compute/find
+  ---
+  Keep lists minimal, focusing on specific names, dates, and values, justify each fact's inclusion.
+
+  Then write a concise plan that:
+  - Has less than 6 steps
+  - Uses available tools, inputs, and facts
+  - Solves task completely
+  - Ends with '<end_plan>'
+  Keep steps essential, sequential, and high-level. Start with the most generic tools. For instance, with web_search.
+
+  ## Tools
+  You can leverage these tools:
+  {% for tool in tools %}
+  ### {{ tool.name }}
+  {{ tool.description }}
+  Arguments: {{tool.inputSchema.properties}}
+  {% endfor %}
+
+  Suggest using general tools first. For instance, always try `web_search` before `arxiv_search`.
+  Now begin! Write your facts survey and plan below.
+
+plan_prefix: |
+  Here are the facts I know and the plan of action that I will follow to solve the task:

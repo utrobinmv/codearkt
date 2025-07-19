@@ -96,7 +96,7 @@ def bot(
             history.append(
                 {
                     "role": "assistant",
-                    "content": f'**Starting "{event.agent_name}" agent...**\n',
+                    "content": f'\n**Starting "{event.agent_name}" agent...**\n\n',
                 }
             )
         elif event.event_type == EventType.AGENT_END:
@@ -105,7 +105,7 @@ def bot(
             history.append(
                 {
                     "role": "assistant",
-                    "content": f"**Agent {event.agent_name} completed the task!**\n",
+                    "content": f"\n**Agent {event.agent_name} completed the task!**\n\n",
                 }
             )
         elif event.event_type == EventType.TOOL_CALL:

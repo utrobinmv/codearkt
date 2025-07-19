@@ -61,6 +61,40 @@ class TestCodeActAgent:
         str_result = str(result).replace(",", "").replace(".", "").replace(" ", "")
         assert "1873272970937648109531" in str_result, result
 
+    async def test_codeact_max_iterations(
+        self, deepseek: LLM, mcp_server_test: MCPServerTest
+    ) -> None:
+        _ = mcp_server_test
+        agent = CodeActAgent(
+            name="agent",
+            description="Just agent",
+            llm=deepseek,
+            tool_names=["arxiv_search"],
+            max_iterations=1,
+        )
+        result = await agent.ainvoke(
+            [ChatMessage(role="user", content="Get the exact title of 2409.06820")],
+            session_id="test",
+        )
+        assert "role-playing language models" in str(result).lower(), result
+
+    async def test_codeact_zero_iterations(
+        self, deepseek: LLM, mcp_server_test: MCPServerTest
+    ) -> None:
+        _ = mcp_server_test
+        agent = CodeActAgent(
+            name="agent",
+            description="Just agent",
+            llm=deepseek,
+            tool_names=["arxiv_search"],
+            max_iterations=0,
+        )
+        result = await agent.ainvoke(
+            [ChatMessage(role="user", content="Get the exact title of 2409.06820")],
+            session_id="test",
+        )
+        assert "role-playing language models" not in str(result).lower(), result
+
     async def test_codeact_images(self, gpt_4o: LLM, mcp_server_test: MCPServerTest) -> None:
         _ = mcp_server_test
         agent = CodeActAgent(

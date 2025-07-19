@@ -24,6 +24,7 @@ def get_librarian() -> CodeActAgent:
         llm=llm,
         prompts=prompts,
         tool_names=["arxiv_download", "arxiv_search"],
+        planning_interval=200,
     )
 
 
@@ -35,4 +36,5 @@ def get_manager() -> CodeActAgent:
         llm=llm,
         managed_agents=[get_librarian()],
         tool_names=[],
+        planning_interval=200,
     )
