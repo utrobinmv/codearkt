@@ -78,6 +78,23 @@ class TestCodeActAgent:
         )
         assert "role-playing language models" in str(result).lower(), result
 
+    async def test_codeact_initial_plan(
+        self, deepseek: LLM, mcp_server_test: MCPServerTest
+    ) -> None:
+        _ = mcp_server_test
+        agent = CodeActAgent(
+            name="agent",
+            description="Just agent",
+            llm=deepseek,
+            tool_names=["arxiv_search"],
+            planning_interval=5,
+        )
+        result = await agent.ainvoke(
+            [ChatMessage(role="user", content="Get the exact title of 2409.06820")],
+            session_id="test",
+        )
+        assert "role-playing language models" in str(result).lower(), result
+
     async def test_codeact_zero_iterations(
         self, deepseek: LLM, mcp_server_test: MCPServerTest
     ) -> None:

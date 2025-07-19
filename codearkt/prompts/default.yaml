@@ -107,7 +107,7 @@ final: |
   Based on the above, please provide an answer to the original user task.
   Do not call any tools.
 
-initial_plan: |
+plan: |
   Given a conversation between a user and an agent:
   ```
   {{conversation}}

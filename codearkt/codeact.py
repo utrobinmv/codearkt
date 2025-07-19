@@ -60,7 +60,7 @@ def fix_code_actions(messages: List[ChatMessage]) -> List[ChatMessage]:
 class Prompts:
     system: Template
     final: Template
-    initial_plan: Optional[Template] = None
+    plan: Optional[Template] = None
     plan_prefix: Optional[Template] = None
 
     @classmethod
@@ -239,15 +239,13 @@ class CodeActAgent:
         session_id: str,
         event_bus: AgentEventBus | None = None,
     ) -> ChatMessages:
-        assert (
-            self.prompts.initial_plan is not None
-        ), "Planning prompt is not set, but planning is enabled"
+        assert self.prompts.plan is not None, "Planning prompt is not set, but planning is enabled"
         assert (
             self.prompts.plan_prefix is not None
         ), "Plan prefix is not set, but planning is enabled"
 
         conversation = "\n\n".join([f"{m.role}: {m.content}" for m in messages])
-        planning_prompt = self.prompts.initial_plan.render(conversation=conversation, tools=tools)
+        planning_prompt = self.prompts.plan.render(conversation=conversation, tools=tools)
         input_messages = [ChatMessage(role="user", content=planning_prompt)]
 
         output_stream = self.llm.astream(input_messages, stop=[END_PLAN_SEQUENCE])
