@@ -48,6 +48,28 @@ signal.signal(signal.SIGINT, cleanup_container)
 signal.signal(signal.SIGTERM, cleanup_container)
 
 
+MAX_LENGTH_TRUNCATE_CONTENT: int = 20000
+
+
+def truncate_content(content: str, max_length: int = MAX_LENGTH_TRUNCATE_CONTENT) -> str:
+    if len(content) <= max_length:
+        return content
+    else:
+        return (
+            content[: max_length // 2]
+            + f"\n..._This content has been truncated to stay below {max_length} characters_...\n"
+            + content[-max_length // 2 :]
+        )
+
+
+def is_correct_json(content: str) -> bool:
+    try:
+        json.loads(content)
+        return True
+    except json.JSONDecodeError:
+        return False
+
+
 class ExecResult(BaseModel):  # type: ignore
     stdout: str
     error: str | None = None
@@ -194,7 +216,15 @@ class PythonExecutor:
             resp.raise_for_status()
             out = resp.json()
             result: ExecResult = ExecResult.model_validate(out)
-            return result
+
+        if result.stdout:
+            result.stdout = truncate_content(result.stdout)
+        if result.error:
+            result.error = truncate_content(result.error)
+        if result.result and isinstance(result.result, str):
+            if not is_correct_json(result.result):
+                result.result = truncate_content(result.result)
+        return result
 
     def _get_url(self) -> str:
         assert self.container is not None

@@ -129,6 +129,8 @@ class CodeActAgent:
         if self.server_url:
             tools = await fetch_tools(self.server_url)
             tools = [tool for tool in tools if tool.name in self.tool_names]
+            for tool_name in self.tool_names:
+                assert tool_name in [tool.name for tool in tools], f"Tool {tool_name} not found"
         system_prompt = self.prompts.system.render(tools=tools)
 
         messages = fix_code_actions(messages)
