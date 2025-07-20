@@ -5,6 +5,7 @@ import asyncio
 import ast
 from typing import Dict, Any, Optional, List
 from functools import partial
+import multiprocessing
 
 from fastapi import FastAPI
 from pydantic import BaseModel
@@ -12,15 +13,18 @@ from pydantic import BaseModel
 from tools import fetch_tools  # type: ignore
 
 app = FastAPI(title="CodeArkt code runtime")
-
-_tools: Dict[str, Any] = {}
-_globals: Dict[str, Any] = {"__name__": "__main__"}
+WORKERS: Dict[str, "Worker"] = {}
 
 
 class Payload(BaseModel):  # type: ignore
     code: str
     tool_names: List[str]
+    interpreter_id: Optional[str] = None
     session_id: Optional[str] = None
+
+
+class CleanupPayload(BaseModel):  # type: ignore
+    interpreter_id: str
 
 
 class ExecResult(BaseModel):  # type: ignore
@@ -60,34 +64,83 @@ def _execute_code(
         return ExecResult(stdout=buf.getvalue(), error=traceback.format_exc(), result=None)
 
 
+def _worker_main(request_q: multiprocessing.Queue, response_q: multiprocessing.Queue) -> None:  # type: ignore
+    import asyncio
+
+    _tools: Dict[str, Any] = {}
+    _globals: Dict[str, Any] = {"__name__": "__main__"}
+
+    while True:
+        item = request_q.get()
+        if item is None:
+            break
+        code: str = item["code"]
+        tool_names: List[str] = item["tool_names"]
+        session_id: Optional[str] = item["session_id"]
+        current_tools: Dict[str, Any] = dict()
+
+        if tool_names:
+            if not _tools or any(name not in _tools for name in tool_names):
+                _tools = asyncio.run(fetch_tools())
+
+            current_tools = {name: _tools[name] for name in tool_names}
+            for name, fn in current_tools.items():
+                if session_id and name.startswith("agent__"):
+                    _globals[name] = partial(fn, session_id=session_id)
+                else:
+                    _globals[name] = fn
+
+        # Remove tools that are no longer requested
+        unused = set(_globals.keys()) & set(_tools.keys()) - set(current_tools.keys())
+        for name in unused:
+            _globals.pop(name, None)
+
+        exec_result = _execute_code(code, _globals)
+        response_q.put(exec_result.model_dump())
+
+
+class Worker:
+    def __init__(self) -> None:
+        self._request_q: multiprocessing.Queue[Optional[Dict[str, Any]]] = multiprocessing.Queue()
+        self._response_q: multiprocessing.Queue[Any] = multiprocessing.Queue()
+        self._process = multiprocessing.Process(
+            target=_worker_main,
+            args=(self._request_q, self._response_q),
+            daemon=True,
+        )
+        self._process.start()
+
+    def exec(self, code: str, tool_names: List[str], session_id: Optional[str]) -> Any:
+        self._request_q.put({"code": code, "tool_names": tool_names, "session_id": session_id})
+        return self._response_q.get()
+
+    def terminate(self) -> None:
+        self._request_q.put(None)
+        self._process.join(timeout=1)
+
+
+def _get_worker(interpreter_id: str) -> Worker:
+    if interpreter_id not in WORKERS:
+        WORKERS[interpreter_id] = Worker()
+    return WORKERS[interpreter_id]
+
+
 @app.post("/exec")  # type: ignore
 async def exec_code(payload: Payload) -> ExecResult:
-    # Cache tools
-    global _tools
-    if not _tools and payload.tool_names:
-        _tools = await fetch_tools()
+    interpreter_id = payload.interpreter_id or "default"
+    worker = _get_worker(interpreter_id)
 
-    # Get current tools
-    current_tools = {tool_name: _tools[tool_name] for tool_name in payload.tool_names}
-    for tool_name in payload.tool_names:
-        assert tool_name in current_tools, f"Tool {tool_name} not found"
-
-    for tool_name, tool_fn in current_tools.items():
-        _globals[tool_name] = tool_fn
-        if payload.session_id and tool_name.startswith("agent__"):
-            _globals[tool_name] = partial(
-                tool_fn,
-                session_id=payload.session_id,
-            )
-
-    # Remove unused tools
-    unused_tools = set(_tools.keys()) - set(current_tools.keys())
-    for tool_name in unused_tools:
-        if tool_name in _globals:
-            del _globals[tool_name]
-
-    # Execute code
     loop = asyncio.get_event_loop()
-    result = await loop.run_in_executor(None, _execute_code, payload.code, _globals)
-
+    result_dict: Dict[str, Any] = await loop.run_in_executor(
+        None, worker.exec, payload.code, payload.tool_names, payload.session_id
+    )
+    result: ExecResult = ExecResult.model_validate(result_dict)
     return result
+
+
+@app.post("/cleanup")  # type: ignore
+async def cleanup(payload: CleanupPayload) -> Dict[str, str]:
+    interpreter_id = payload.interpreter_id
+    worker = _get_worker(interpreter_id)
+    worker.terminate()
+    return {"status": "ok"}

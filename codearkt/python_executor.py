@@ -5,25 +5,47 @@ import asyncio
 import atexit
 import signal
 import json
-import threading
+import uuid
 from typing import Optional, Any, List, Dict, Sequence
 
 import docker
 from docker.models.containers import Container
+from docker.client import DockerClient
 from pydantic import BaseModel
 
 from codearkt.llm import ChatMessage
 from codearkt.tools import fetch_tools
 
 
-IMAGE = "phoenix120/codearkt_http"
-MEM_LIMIT = "512m"
-CPU_QUOTA = 50000
-CPU_PERIOD = 100000
-EXEC_TIMEOUT = 600
-PIDS_LIMIT = 64
-CLIENT = None
-NET_NAME = "sandbox_net"
+IMAGE: str = "phoenix120/codearkt_http"
+MEM_LIMIT: str = "512m"
+CPU_QUOTA: int = 50000
+CPU_PERIOD: int = 100000
+EXEC_TIMEOUT: int = 600
+CLEANUP_TIMEOUT: int = 30
+PIDS_LIMIT: int = 64
+NET_NAME: str = "sandbox_net"
+CONTAINER_NAME: str = "codearkt_http"
+
+_CLIENT: Optional[DockerClient] = None
+_CONTAINER: Optional[Container] = None
+
+
+def cleanup_container(signum: Optional[Any] = None, frame: Optional[Any] = None) -> None:
+    global _CONTAINER
+    if _CONTAINER:
+        try:
+            _CONTAINER.remove(force=True)
+            _CONTAINER = None
+        except Exception:
+            pass
+    if signum == signal.SIGINT:
+        raise KeyboardInterrupt()
+
+
+atexit.register(cleanup_container)
+signal.signal(signal.SIGINT, cleanup_container)
+signal.signal(signal.SIGTERM, cleanup_container)
 
 
 class ExecResult(BaseModel):  # type: ignore
@@ -90,65 +112,56 @@ class PythonExecutor:
         session_id: Optional[str] = None,
         mcp_server_port: int = 5055,
     ) -> None:
-        global CLIENT
-        if not CLIENT:
-            CLIENT = init_docker()
-        client = CLIENT
-        try:
-            net = client.networks.get(NET_NAME)
-        except docker.errors.NotFound:
-            net = client.networks.create(
-                NET_NAME,
-                driver="bridge",
-                internal=False,
-                options={
-                    "com.docker.network.bridge.enable_ip_masquerade": "false",
-                },
-            )
+        global _CLIENT, _CONTAINER
 
-        self.session_id = session_id
-        self.tool_names = tool_names
-        self.mcp_server_port = mcp_server_port
-        self.tools_are_checked = False
+        if not _CLIENT:
+            _CLIENT = init_docker()
+        client = _CLIENT
 
-        self.container: Optional[Container] = client.containers.run(
-            IMAGE,
-            detach=True,
-            auto_remove=True,
-            ports={"8000/tcp": None},
-            mem_limit=MEM_LIMIT,
-            cpu_period=CPU_PERIOD,
-            cpu_quota=CPU_QUOTA,
-            pids_limit=PIDS_LIMIT,
-            cap_drop=["ALL"],
-            read_only=True,
-            tmpfs={"/tmp": "rw,size=64m", "/run": "rw,size=16m"},
-            security_opt=["no-new-privileges"],
-            extra_hosts={"host.docker.internal": "host-gateway"},
-            sysctls={"net.ipv4.ip_forward": "0"},
-            network=net.name,
-            dns=[],
-            environment={"SERVER_PORT": str(mcp_server_port)},
-        )
-        self.url = self._get_url()
-
-        atexit.register(self.cleanup)
-
-        if threading.current_thread() is threading.main_thread():
-            self._attach_signal_handler(signal.SIGINT)
-            self._attach_signal_handler(signal.SIGTERM)
-
-    def _attach_signal_handler(self, sig: int) -> None:
-        previous = signal.getsignal(sig)
-
-        def _handler(signum: int, frame: Optional[Any] = None) -> None:
+        if _CONTAINER is None:
             try:
-                self.cleanup()
-            finally:
-                if callable(previous):
-                    previous(signum, frame)
+                _CONTAINER = _CLIENT.containers.get(CONTAINER_NAME)
+            except docker.errors.NotFound:
+                try:
+                    net = client.networks.get(NET_NAME)
+                except docker.errors.NotFound:
+                    net = client.networks.create(
+                        NET_NAME,
+                        driver="bridge",
+                        internal=False,
+                        options={
+                            "com.docker.network.bridge.enable_ip_masquerade": "false",
+                        },
+                    )
 
-        signal.signal(sig, _handler)
+                _CONTAINER = client.containers.run(
+                    IMAGE,
+                    name=CONTAINER_NAME,
+                    detach=True,
+                    auto_remove=True,
+                    ports={"8000/tcp": None},
+                    mem_limit=MEM_LIMIT,
+                    cpu_period=CPU_PERIOD,
+                    cpu_quota=CPU_QUOTA,
+                    pids_limit=PIDS_LIMIT,
+                    cap_drop=["ALL"],
+                    read_only=True,
+                    tmpfs={"/tmp": "rw,size=64m", "/run": "rw,size=16m"},
+                    security_opt=["no-new-privileges"],
+                    extra_hosts={"host.docker.internal": "host-gateway"},
+                    sysctls={"net.ipv4.ip_forward": "0"},
+                    network=net.name,
+                    dns=[],
+                    environment={"SERVER_PORT": str(mcp_server_port)},
+                )
+
+        self.container = _CONTAINER
+        self.mcp_server_port = mcp_server_port
+        self.session_id = session_id
+        self.interpreter_id: str = str(uuid.uuid4())
+        self.tool_names = tool_names
+        self.tools_are_checked = False
+        self.url = self._get_url()
 
     async def invoke(self, code: str) -> ExecResult:
         await self._check_tools()
@@ -171,6 +184,7 @@ class PythonExecutor:
             "code": textwrap.dedent(code),
             "session_id": self.session_id,
             "tool_names": self.tool_names,
+            "interpreter_id": self.interpreter_id,
         }
 
         async with httpx.AsyncClient(limits=httpx.Limits(keepalive_expiry=0)) as client:
@@ -182,22 +196,22 @@ class PythonExecutor:
             result: ExecResult = ExecResult.model_validate(out)
             return result
 
-    def cleanup(self) -> None:
-        if self.container is None:
-            return
-        try:
-            self.container.remove(force=True)
-        except Exception:
-            pass
-        finally:
-            self.container = None
-
     def _get_url(self) -> str:
         assert self.container is not None
         self.container.reload()
         ports = self.container.attrs["NetworkSettings"]["Ports"]
         mapping = ports["8000/tcp"][0]
         return f"http://localhost:{mapping['HostPort']}"
+
+    async def cleanup(self) -> None:
+        payload = {
+            "interpreter_id": self.interpreter_id,
+        }
+        async with httpx.AsyncClient(limits=httpx.Limits(keepalive_expiry=0)) as client:
+            response = await client.post(
+                f"{self.url}/cleanup", json=payload, timeout=CLEANUP_TIMEOUT
+            )
+            response.raise_for_status()
 
     async def _wait_for_ready(self, max_wait: int = 60) -> None:
         start_time = time.time()

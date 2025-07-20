@@ -14,7 +14,6 @@ from PIL import Image
 from dotenv import load_dotenv
 from mcp.server.fastmcp import FastMCP
 from sse_starlette.sse import AppStatus
-from codearkt.python_executor import PythonExecutor
 from academia_mcp.tools import arxiv_download, arxiv_search
 
 from codearkt.llm import LLM
@@ -35,11 +34,6 @@ def gpt_4o() -> LLM:
 @pytest.fixture
 def deepseek() -> LLM:
     return LLM(model_name="deepseek/deepseek-chat-v3-0324")
-
-
-@pytest.fixture(scope="module")
-def default_python_executor() -> PythonExecutor:
-    return PythonExecutor()
 
 
 def get_nested_agent() -> CodeActAgent:

@@ -149,7 +149,7 @@ class CodeActAgent:
             new_messages = await self._handle_final_message(messages, session_id, event_bus)
             messages.extend(new_messages)
 
-        python_executor.cleanup()
+        await python_executor.cleanup()
         await self._publish_event(event_bus, session_id, EventType.AGENT_END)
         return str(messages[-1].content)
 
