@@ -4,6 +4,7 @@ from textwrap import dedent
 from codearkt.codeact import CodeActAgent, extract_code_from_text
 from codearkt.llm import ChatMessage, LLM
 from codearkt.event_bus import AgentEventBus, EventType
+from codearkt.util import get_unique_id
 
 from tests.conftest import MCPServerTest, get_nested_agent
 
@@ -56,7 +57,7 @@ class TestCodeActAgent:
         )
         result = await agent.ainvoke(
             [ChatMessage(role="user", content="What is 432412421249 * 4332144219?")],
-            session_id="test",
+            session_id=get_unique_id(),
         )
         str_result = str(result).replace(",", "").replace(".", "").replace(" ", "")
         assert "1873272970937648109531" in str_result, result
@@ -74,7 +75,7 @@ class TestCodeActAgent:
         )
         result = await agent.ainvoke(
             [ChatMessage(role="user", content="Get the exact title of 2409.06820")],
-            session_id="test",
+            session_id=get_unique_id(),
         )
         assert "role-playing language models" in str(result).lower(), result
 
@@ -91,7 +92,7 @@ class TestCodeActAgent:
         )
         result = await agent.ainvoke(
             [ChatMessage(role="user", content="Get the exact title of 2409.06820")],
-            session_id="test",
+            session_id=get_unique_id(),
         )
         assert "role-playing language models" in str(result).lower(), result
 
@@ -108,7 +109,7 @@ class TestCodeActAgent:
         )
         result = await agent.ainvoke(
             [ChatMessage(role="user", content="Get the exact title of 2409.06820")],
-            session_id="test",
+            session_id=get_unique_id(),
         )
         assert "role-playing language models" not in str(result).lower(), result
 
@@ -128,7 +129,7 @@ class TestCodeActAgent:
                     content=f"What blocks are in this image? {image_url}\nUse show_image tool",
                 )
             ],
-            session_id="test",
+            session_id=get_unique_id(),
         )
         assert "Player" in str(result), result
 
@@ -148,7 +149,7 @@ class TestCodeActAgent:
                     content=query,
                 )
             ],
-            session_id="test",
+            session_id=get_unique_id(),
         )
         assert "role-playing language models" in str(result).lower(), result
 
@@ -161,7 +162,7 @@ class TestCodeActAgent:
         )
         query = "What is 432412421249 * 4332144219?"
         event_bus = AgentEventBus()
-        session_id = "test"
+        session_id = get_unique_id()
         task = asyncio.create_task(
             agent.ainvoke(
                 [

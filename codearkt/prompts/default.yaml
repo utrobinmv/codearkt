@@ -26,7 +26,7 @@ system: |
   - State persists between executions.
 
   ## Example of using (notional) tools:
-  Task:
+  User message:
   Which paper introduced Vector Quantized Variational Autoencoders (VQ-VAE)?
 
   Your message:
@@ -75,7 +75,7 @@ system: |
   I found the first paper! The final answer is "Neural Discrete Representation Learning (1711.00937v2)".
 
   ## Example of using (notional) managed agents
-  Task:
+  User message:
   Which paper introduced Vector Quantized Variational Autoencoders (VQ-VAE)?
 
   Your message:
@@ -101,10 +101,10 @@ system: |
   Arguments: {{tool.inputSchema.properties}}
   {% endfor %}
 
-  Now begin! Try to solve the task correctly.
+  Now begin! Given a conversation below, please provide an answer to the last user message.
 
 final: |
-  Based on the above, please provide an answer to the original user task.
+  Based on the above, please provide an answer to the last user message.
   Do not call any tools.
 
 plan: |

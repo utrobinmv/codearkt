@@ -5,7 +5,6 @@ import asyncio
 import atexit
 import signal
 import json
-import uuid
 from typing import Optional, Any, List, Dict, Sequence
 
 import docker
@@ -15,6 +14,7 @@ from pydantic import BaseModel
 
 from codearkt.llm import ChatMessage
 from codearkt.tools import fetch_tools
+from codearkt.util import get_unique_id
 
 
 IMAGE: str = "phoenix120/codearkt_http"
@@ -133,6 +133,7 @@ class PythonExecutor:
         tool_names: Sequence[str] = tuple(),
         session_id: Optional[str] = None,
         mcp_server_port: int = 5055,
+        interpreter_id: Optional[str] = None,
     ) -> None:
         global _CLIENT, _CONTAINER
 
@@ -180,7 +181,7 @@ class PythonExecutor:
         self.container = _CONTAINER
         self.mcp_server_port = mcp_server_port
         self.session_id = session_id
-        self.interpreter_id: str = str(uuid.uuid4())
+        self.interpreter_id: str = interpreter_id or get_unique_id()
         self.tool_names = tool_names
         self.tools_are_checked = False
         self.url = self._get_url()

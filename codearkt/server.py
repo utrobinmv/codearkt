@@ -1,5 +1,4 @@
 import asyncio
-import uuid
 from typing import Dict, Any, Optional, List, Callable, AsyncGenerator
 
 import uvicorn
@@ -11,6 +10,7 @@ from pydantic import BaseModel
 from codearkt.codeact import CodeActAgent
 from codearkt.llm import ChatMessage
 from codearkt.event_bus import AgentEventBus
+from codearkt.util import get_unique_id
 
 
 event_bus = AgentEventBus()
@@ -38,7 +38,7 @@ AGENT_RESPONSE_HEADERS = {
 def create_agent_endpoint(agent_app: FastAPI, agent_instance: CodeActAgent) -> Callable[..., Any]:
     @agent_app.post(f"/{agent_instance.name}")  # type: ignore
     async def agent_tool(request: AgentRequest) -> Any:
-        session_id = request.session_id or str(uuid.uuid4())
+        session_id = request.session_id or get_unique_id()
 
         if request.stream:
 

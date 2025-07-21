@@ -1,12 +1,11 @@
 import httpx
 from typing import Iterator, List, Dict, Any
-import uuid
 
 import gradio as gr
 
 from codearkt.event_bus import AgentEvent, EventType
 from codearkt.llm import ChatMessage, ToolCall, FunctionCall
-
+from codearkt.util import get_unique_id
 
 HEADERS = {"Content-Type": "application/json", "Accept": "text/event-stream"}
 CODE_TITLE = "Code execution result"
@@ -62,7 +61,7 @@ def bot(
     real_messages: List[ChatMessage],
 ) -> Iterator[tuple[List[Dict[str, Any]], str | None, List[ChatMessage]]]:
     history = []
-    session_id = session_id or str(uuid.uuid4())
+    session_id = session_id or get_unique_id()
     real_messages = clean_real_messages(real_messages)
     real_messages.append(ChatMessage(role="user", content=message))
     events = query_manager_agent(real_messages, session_id=session_id)
@@ -110,7 +109,7 @@ def bot(
             )
         elif event.event_type == EventType.TOOL_CALL:
             assert event.content
-            tool_call_id = str(uuid.uuid4())[:10]
+            tool_call_id = get_unique_id()
             if is_root_agent:
                 real_messages.append(
                     ChatMessage(
