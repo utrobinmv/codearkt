@@ -5,6 +5,8 @@ from collections import defaultdict
 
 from pydantic import BaseModel
 
+STREAM_TIMEOUT = 120
+
 
 class EventType(StrEnum):
     AGENT_START = "agent_start"
@@ -67,7 +69,7 @@ class AgentEventBus:
         is_root_agent = True
         while not is_agent_end or not is_root_agent:
             try:
-                event = await asyncio.wait_for(queue.get(), timeout=60)
+                event = await asyncio.wait_for(queue.get(), timeout=STREAM_TIMEOUT)
                 if not event:
                     continue
                 yield event
