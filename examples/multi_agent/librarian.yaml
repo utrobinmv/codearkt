@@ -26,6 +26,8 @@ system: |
   - State persists between executions.
 
   Additional guidelines:
+  - Use the general web search tools before callingspecific search tools.
+  - Follow the plan generated in the previous steps.
   - For the web search tools, always try basic wide search first.
 
   ## Example of using (notional) tools:
@@ -124,7 +126,7 @@ plan: |
   Arguments: {{tool.inputSchema.properties}}
   {% endfor %}
 
-  Suggest using general tools first. For instance, always try `web_search` before `arxiv_search`.
+  Suggest using general tools first. For instance, always use `web_search` before `arxiv_search`.
   Now begin! Write your facts survey and plan below.
 
 plan_prefix: |
