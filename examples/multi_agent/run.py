@@ -40,7 +40,12 @@ def get_librarian() -> CodeActAgent:
         description=LIBRARIAN_DESCRIPTION,
         llm=llm,
         prompts=prompts,
-        tool_names=["academia_arxiv_download", "academia_arxiv_search", "exa_web_search_exa"],
+        tool_names=[
+            "academia_arxiv_download",
+            "academia_arxiv_search",
+            "exa_web_search_exa",
+            "exa_crawling_exa",
+        ],
         planning_interval=5,
     )
 
