@@ -32,7 +32,8 @@ dependencies = [
     "types-docker>=7.1.0.20250523",
     "types-pyyaml>=6.0.12.20250516",
     "wsproto>=1.2.0",
-    "uvicorn==0.34.3",
+    "uvicorn>=0.34.3",
+    "sse-starlette<3.0.0",
     "mcp==1.10.1",
     "gradio==5.29.0",
 ]
