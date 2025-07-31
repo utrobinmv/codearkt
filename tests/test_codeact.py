@@ -53,7 +53,6 @@ class TestCodeActAgent:
             name="agent",
             description="Just agent",
             llm=deepseek,
-            server_url=None,
             tool_names=[],
         )
         result = await agent.ainvoke(

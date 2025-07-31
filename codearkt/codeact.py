@@ -90,7 +90,6 @@ class CodeActAgent:
         max_iterations: int = 10,
         verbosity_level: int = logging.ERROR,
         planning_interval: Optional[int] = None,
-        server_url: Optional[str] = DEFAULT_SERVER_URL,
         managed_agents: Optional[List[Self]] = None,
     ) -> None:
         self.name = name
@@ -101,7 +100,6 @@ class CodeActAgent:
         self.max_iterations = max_iterations
         self.verbosity_level = verbosity_level
         self.planning_interval = planning_interval
-        self.server_url = server_url
         self.managed_agents: Optional[List[Self]] = managed_agents
         if self.managed_agents:
             for agent in self.managed_agents:
@@ -128,6 +126,7 @@ class CodeActAgent:
         messages: ChatMessages,
         session_id: str,
         event_bus: AgentEventBus | None = None,
+        server_url: Optional[str] = DEFAULT_SERVER_URL,
     ) -> str:
         messages = copy.deepcopy(messages)
 
@@ -145,11 +144,13 @@ class CodeActAgent:
 
             # Check tools
             tools = []
-            if self.server_url:
-                tools = await fetch_tools(self.server_url)
+            if server_url:
+                tools = await fetch_tools(server_url)
                 tools = [tool for tool in tools if tool.name in self.tool_names]
-                for tool_name in self.tool_names:
-                    assert tool_name in [tool.name for tool in tools], f"Tool {tool_name} not found"
+
+            for tool_name in self.tool_names:
+                assert tool_name in [tool.name for tool in tools], f"Tool {tool_name} not found"
+
             system_prompt = self.prompts.system.render(tools=tools)
             self._log(f"Available tools: {self.tool_names}", run_id=run_id, session_id=session_id)
 

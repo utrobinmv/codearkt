@@ -147,11 +147,12 @@ async def run_query(
     query: str, agent: CodeActAgent, mcp_config: Optional[Dict[str, Any]] = None
 ) -> str:
     app = get_main_app(agent, mcp_config)
+    host = "0.0.0.0"
     free_port = find_free_port()
     assert free_port is not None
     config = uvicorn.Config(
         app,
-        host="0.0.0.0",
+        host=host,
         port=free_port,
         log_level="error",
         access_log=False,
@@ -180,11 +181,13 @@ async def run_query(
     result = await agent.ainvoke(
         [ChatMessage(role="user", content=query)],
         session_id=get_unique_id(),
+        server_url=f"http://{host}:{free_port}",
     )
 
     server.should_exit = True
     if _thread.is_alive():
         _thread.join(timeout=5)
     AppStatus.should_exit = False
+    AppStatus.should_exit_event = None
 
     return result

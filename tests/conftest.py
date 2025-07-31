@@ -71,6 +71,7 @@ def show_image(url: str) -> Dict[str, str]:
 
 def reset_app_status() -> None:
     AppStatus.should_exit = False
+    AppStatus.should_exit_event = None
 
 
 class MCPServerTest:
