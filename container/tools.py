@@ -60,21 +60,27 @@ def _call(tool: str, *args: Any, **kwargs: Any) -> List[ContentBlock] | str | No
 async def fetch_tools() -> Dict[str, Callable[..., ToolReturnType]]:
     global _tool_schemas
     final_tools = {}
-    async with streamablehttp_client(SERVER_URL + "/mcp") as (
-        read_stream,
-        write_stream,
-        _,
-    ):
-        async with ClientSession(read_stream, write_stream) as session:
-            await session.initialize()
-            tools_response = await session.list_tools()
-            tools: List[Tool] = tools_response.tools
+    print("Tools server URL", SERVER_URL)
+    try:
+        async with streamablehttp_client(SERVER_URL + "/mcp") as (
+            read_stream,
+            write_stream,
+            _,
+        ):
+            async with ClientSession(read_stream, write_stream) as session:
+                await session.initialize()
+                tools_response = await session.list_tools()
+                tools: List[Tool] = tools_response.tools
 
-            _tool_schemas = {tool.name: tool for tool in tools}
+                _tool_schemas = {tool.name: tool for tool in tools}
 
-            for tool in tools:
-                tool_fn: Callable[..., ToolReturnType] = functools.partial(_call, tool.name)
-                final_tools[tool.name] = tool_fn
+                for tool in tools:
+                    tool_fn: Callable[..., ToolReturnType] = functools.partial(_call, tool.name)
+                    final_tools[tool.name] = tool_fn
+    except Exception:
+        print("Failed to fetch MCP tools")
+        print(traceback.format_exc())
+        pass
 
     agent_cards = []
     try:

@@ -132,7 +132,7 @@ class PythonExecutor:
         self,
         tool_names: Sequence[str] = tuple(),
         session_id: Optional[str] = None,
-        mcp_server_port: int = 5055,
+        tools_server_port: int = 5055,
         interpreter_id: Optional[str] = None,
     ) -> None:
         global _CLIENT, _CONTAINER
@@ -175,11 +175,11 @@ class PythonExecutor:
                     sysctls={"net.ipv4.ip_forward": "0"},
                     network=net.name,
                     dns=[],
-                    environment={"SERVER_PORT": str(mcp_server_port)},
+                    environment={"SERVER_PORT": str(tools_server_port)},
                 )
 
         self.container = _CONTAINER
-        self.mcp_server_port = mcp_server_port
+        self.tools_server_port = tools_server_port
         self.session_id = session_id
         self.interpreter_id: str = interpreter_id or get_unique_id()
         self.tool_names = tool_names
@@ -195,7 +195,7 @@ class PythonExecutor:
     async def _check_tools(self) -> None:
         if not self.tool_names or self.tools_are_checked:
             return
-        available_tools = await fetch_tools(f"http://localhost:{self.mcp_server_port}")
+        available_tools = await fetch_tools(f"http://localhost:{self.tools_server_port}")
         available_tool_names = [tool.name for tool in available_tools]
         for tool_name in self.tool_names:
             if tool_name.startswith("agent__"):
@@ -204,11 +204,11 @@ class PythonExecutor:
                 raise ValueError(f"Tool {tool_name} not found in MCP server")
         self.tools_are_checked = True
 
-    async def _call_exec(self, code: str) -> ExecResult:
+    async def _call_exec(self, code: str, send_tools: bool = True) -> ExecResult:
         payload = {
             "code": textwrap.dedent(code),
             "session_id": self.session_id,
-            "tool_names": self.tool_names,
+            "tool_names": self.tool_names if send_tools else [],
             "interpreter_id": self.interpreter_id,
         }
 
@@ -250,7 +250,7 @@ class PythonExecutor:
         start_time = time.time()
         while time.time() - start_time < max_wait:
             try:
-                output = await self._call_exec("print('ready')")
+                output = await self._call_exec("print('ready')", send_tools=False)
                 assert output.stdout.strip() == "ready"
                 return
             except (httpx.RequestError, httpx.TimeoutException, AssertionError):

@@ -165,6 +165,7 @@ async def run_query(
             [ChatMessage(role="user", content=query)],
             session_id=get_unique_id(),
             server_url=f"http://{host}:{port}",
+            server_port=port,
         )
     finally:
         server.should_exit = True

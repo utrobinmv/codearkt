@@ -36,12 +36,13 @@ def deepseek() -> LLM:
     return LLM(model_name="deepseek/deepseek-chat-v3-0324")
 
 
-def get_nested_agent() -> CodeActAgent:
+def get_nested_agent(verbosity_level: int = logging.ERROR) -> CodeActAgent:
     return CodeActAgent(
         name="nested_agent",
         description="Call it when you need to get info about papers. Pass only your query as an argument.",
         llm=LLM(model_name="gpt-4o"),
         tool_names=("arxiv_download", "arxiv_search"),
+        verbosity_level=verbosity_level,
     )
 
 

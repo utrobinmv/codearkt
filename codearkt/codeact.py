@@ -127,6 +127,7 @@ class CodeActAgent:
         session_id: str,
         event_bus: AgentEventBus | None = None,
         server_url: Optional[str] = DEFAULT_SERVER_URL,
+        server_port: int = 5055,
     ) -> str:
         messages = copy.deepcopy(messages)
 
@@ -138,7 +139,10 @@ class CodeActAgent:
         try:
             # Initialize Python interpreter
             python_executor = PythonExecutor(
-                session_id=session_id, tool_names=self.tool_names, interpreter_id=run_id
+                session_id=session_id,
+                tool_names=self.tool_names,
+                interpreter_id=run_id,
+                tools_server_port=server_port,
             )
             self._log("Python interpreter started", run_id=run_id, session_id=session_id)
 

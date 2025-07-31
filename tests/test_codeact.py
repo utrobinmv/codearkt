@@ -210,7 +210,7 @@ class TestCodeActAgent:
         str_result = str(final_text).replace(",", "").replace(".", "").replace(" ", "")
         assert "1873272970937648109531" in str_result, str_result
 
-    async def test_run_query(self, deepseek: LLM) -> None:
+    async def test_run_query_simple(self, deepseek: LLM) -> None:
         agent_name = "agent"
         agent = CodeActAgent(
             name=agent_name,

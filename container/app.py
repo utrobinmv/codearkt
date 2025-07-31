@@ -80,15 +80,21 @@ def _worker_main(request_q: multiprocessing.Queue, response_q: multiprocessing.Q
         current_tools: Dict[str, Any] = dict()
 
         if tool_names:
-            if not _tools or any(name not in _tools for name in tool_names):
-                _tools = asyncio.run(fetch_tools())
+            try:
+                if not _tools or any(name not in _tools for name in tool_names):
+                    _tools = asyncio.run(fetch_tools())
 
-            current_tools = {name: _tools[name] for name in tool_names}
-            for name, fn in current_tools.items():
-                if session_id and name.startswith("agent__"):
-                    _globals[name] = partial(fn, session_id=session_id)
-                else:
-                    _globals[name] = fn
+                current_tools = {name: _tools[name] for name in tool_names}
+                for name, fn in current_tools.items():
+                    if session_id and name.startswith("agent__"):
+                        _globals[name] = partial(fn, session_id=session_id)
+                    else:
+                        _globals[name] = fn
+            except Exception:
+                print("Error fetching tools", traceback.format_exc())
+                exec_result = ExecResult(stdout="", error=traceback.format_exc(), result=None)
+                response_q.put(exec_result.model_dump())
+                continue
 
         # Remove tools that are no longer requested
         unused = set(_globals.keys()) & set(_tools.keys()) - set(current_tools.keys())
