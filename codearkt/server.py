@@ -1,16 +1,12 @@
 import asyncio
-import threading
-import time
 import socket
 from typing import Dict, Any, Optional, List, Callable, AsyncGenerator
-from contextlib import suppress
 
 import uvicorn
 from fastmcp import FastMCP, settings as fastmcp_settings
 from fastapi import FastAPI
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from sse_starlette.sse import AppStatus
 
 from codearkt.codeact import CodeActAgent
 from codearkt.llm import ChatMessage
@@ -148,46 +144,35 @@ async def run_query(
 ) -> str:
     app = get_main_app(agent, mcp_config)
     host = "0.0.0.0"
-    free_port = find_free_port()
-    assert free_port is not None
+    port = find_free_port()
+    assert port is not None
+
     config = uvicorn.Config(
         app,
         host=host,
-        port=free_port,
+        port=port,
         log_level="error",
         access_log=False,
         lifespan="on",
         ws="none",
     )
-    server: uvicorn.Server = uvicorn.Server(config)
+    server = uvicorn.Server(config)
+    server_task = asyncio.create_task(server.serve())
 
-    def _run() -> None:
-        async def _serve() -> None:
-            assert server is not None
-            await server.serve()
-
-        with suppress(asyncio.CancelledError):
-            asyncio.run(_serve())
-
-    _thread = threading.Thread(target=_run, daemon=True)
-    _thread.start()
-
-    deadline = time.time() + 30
-    while time.time() < deadline:
-        if server.started:
-            break
-        time.sleep(0.05)
-
-    result = await agent.ainvoke(
-        [ChatMessage(role="user", content=query)],
-        session_id=get_unique_id(),
-        server_url=f"http://{host}:{free_port}",
-    )
-
-    server.should_exit = True
-    if _thread.is_alive():
-        _thread.join(timeout=5)
-    AppStatus.should_exit = False
-    AppStatus.should_exit_event = None
+    try:
+        await asyncio.wait_for(_wait_until_started(server), timeout=30)
+        result = await agent.ainvoke(
+            [ChatMessage(role="user", content=query)],
+            session_id=get_unique_id(),
+            server_url=f"http://{host}:{port}",
+        )
+    finally:
+        server.should_exit = True
+        await server_task
 
     return result
+
+
+async def _wait_until_started(server: uvicorn.Server) -> None:
+    while not server.started:
+        await asyncio.sleep(0.05)
