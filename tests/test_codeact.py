@@ -5,6 +5,7 @@ from codearkt.codeact import CodeActAgent, extract_code_from_text
 from codearkt.llm import ChatMessage, LLM
 from codearkt.event_bus import AgentEventBus, EventType
 from codearkt.util import get_unique_id
+from codearkt.server import run_query
 
 from tests.conftest import MCPServerTest, get_nested_agent
 
@@ -208,4 +209,15 @@ class TestCodeActAgent:
         contents = [e.content for e in events if e.event_type == EventType.OUTPUT if e.content]
         final_text = "".join(contents)
         str_result = str(final_text).replace(",", "").replace(".", "").replace(" ", "")
+        assert "1873272970937648109531" in str_result, str_result
+
+    async def test_run_query(self, deepseek: LLM) -> None:
+        agent_name = "agent"
+        agent = CodeActAgent(
+            name=agent_name,
+            description="Just agent",
+            llm=deepseek,
+        )
+        result = await run_query("What is 432412421249 * 4332144219?", agent, {})
+        str_result = str(result).replace(",", "").replace(".", "").replace(" ", "")
         assert "1873272970937648109531" in str_result, str_result

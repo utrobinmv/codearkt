@@ -88,7 +88,7 @@ class CodeActAgent:
         tool_names: Sequence[str] = tuple(),
         prompts: Optional[Prompts] = None,
         max_iterations: int = 10,
-        verosity_level: int = logging.ERROR,
+        verbosity_level: int = logging.ERROR,
         planning_interval: Optional[int] = None,
         server_url: Optional[str] = DEFAULT_SERVER_URL,
         managed_agents: Optional[List[Self]] = None,
@@ -99,7 +99,7 @@ class CodeActAgent:
         self.prompts: Prompts = prompts or Prompts.default()
         self.tool_names = list(tool_names)
         self.max_iterations = max_iterations
-        self.verosity_level = verosity_level
+        self.verbosity_level = verbosity_level
         self.planning_interval = planning_interval
         self.server_url = server_url
         self.managed_agents: Optional[List[Self]] = managed_agents
@@ -110,7 +110,7 @@ class CodeActAgent:
                     self.tool_names.append(agent_tool_name)
 
         self.logger = logging.getLogger(self.__class__.__name__ + ":" + self.name)
-        self.logger.setLevel(self.verosity_level)
+        self.logger.setLevel(self.verbosity_level)
         if not self.logger.hasHandlers():
             self.logger.addHandler(logging.StreamHandler())
 
