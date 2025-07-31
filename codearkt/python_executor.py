@@ -198,6 +198,8 @@ class PythonExecutor:
         available_tools = await fetch_tools(f"http://localhost:{self.mcp_server_port}")
         available_tool_names = [tool.name for tool in available_tools]
         for tool_name in self.tool_names:
+            if tool_name.startswith("agent__"):
+                continue
             if tool_name not in available_tool_names:
                 raise ValueError(f"Tool {tool_name} not found in MCP server")
         self.tools_are_checked = True
