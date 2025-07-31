@@ -186,6 +186,5 @@ async def run_query(
     if _thread.is_alive():
         _thread.join(timeout=5)
     AppStatus.should_exit = False
-    AppStatus.should_exit_event = None
 
     return result
