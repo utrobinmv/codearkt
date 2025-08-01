@@ -1,4 +1,5 @@
 import os
+import logging
 from pathlib import Path
 
 from phoenix.otel import register
@@ -47,6 +48,7 @@ def get_librarian() -> CodeActAgent:
             "exa_crawling_exa",
         ],
         planning_interval=5,
+        verbosity_level=logging.INFO,
     )
 
 
@@ -59,6 +61,7 @@ def get_manager() -> CodeActAgent:
         managed_agents=[get_librarian()],
         tool_names=[],
         planning_interval=5,
+        verbosity_level=logging.INFO,
     )
 
 

@@ -10,7 +10,7 @@ import yaml
 from mcp import Tool
 from jinja2 import Template
 
-from codearkt.python_executor import PythonExecutor
+from codearkt.python_executor import PythonExecutor, DEFAULT_SERVER_HOST, DEFAULT_SERVER_PORT
 from codearkt.tools import fetch_tools
 from codearkt.event_bus import AgentEventBus, EventType
 from codearkt.llm import LLM, ChatMessages, ChatMessage, FunctionCall, ToolCall
@@ -20,7 +20,6 @@ from codearkt.util import get_unique_id
 END_CODE_SEQUENCE = "<end_code>"
 END_PLAN_SEQUENCE = "<end_plan>"
 STOP_SEQUENCES = [END_CODE_SEQUENCE, "Observation:", "Calling tools:"]
-DEFAULT_SERVER_URL = "http://localhost:5055"
 CURRENT_DIR = Path(__file__).parent
 
 
@@ -126,8 +125,8 @@ class CodeActAgent:
         messages: ChatMessages,
         session_id: str,
         event_bus: AgentEventBus | None = None,
-        server_url: Optional[str] = DEFAULT_SERVER_URL,
-        server_port: int = 5055,
+        server_host: Optional[str] = DEFAULT_SERVER_HOST,
+        server_port: Optional[int] = DEFAULT_SERVER_PORT,
     ) -> str:
         messages = copy.deepcopy(messages)
 
@@ -148,12 +147,22 @@ class CodeActAgent:
 
             # Check tools
             tools = []
-            if server_url:
+            fetched_tool_names = []
+            if server_host and server_port:
+                server_url = f"{server_host}:{server_port}"
                 tools = await fetch_tools(server_url)
                 tools = [tool for tool in tools if tool.name in self.tool_names]
+                fetched_tool_names = [tool.name for tool in tools]
+                self._log(
+                    f"Fetched tools: {fetched_tool_names}",
+                    run_id=run_id,
+                    session_id=session_id,
+                )
 
             for tool_name in self.tool_names:
-                assert tool_name in [tool.name for tool in tools], f"Tool {tool_name} not found"
+                assert (
+                    tool_name in fetched_tool_names
+                ), f"Tool {tool_name} not found in {fetched_tool_names}"
 
             system_prompt = self.prompts.system.render(tools=tools)
             self._log(f"Available tools: {self.tool_names}", run_id=run_id, session_id=session_id)

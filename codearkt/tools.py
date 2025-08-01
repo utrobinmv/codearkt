@@ -7,6 +7,8 @@ from mcp.client.streamable_http import streamablehttp_client
 
 async def fetch_tools(url: str) -> List[Tool]:
     all_tools: List[Tool] = []
+    if not url.startswith("http://") and not url.startswith("https://"):
+        url = "http://" + url
 
     try:
         async with streamablehttp_client(url + "/mcp") as (

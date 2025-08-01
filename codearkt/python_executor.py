@@ -26,6 +26,8 @@ CLEANUP_TIMEOUT: int = 30
 PIDS_LIMIT: int = 64
 NET_NAME: str = "sandbox_net"
 CONTAINER_NAME: str = "codearkt_http"
+DEFAULT_SERVER_HOST = "localhost"
+DEFAULT_SERVER_PORT = 5055
 
 _CLIENT: Optional[DockerClient] = None
 _CONTAINER: Optional[Container] = None
@@ -132,7 +134,8 @@ class PythonExecutor:
         self,
         tool_names: Sequence[str] = tuple(),
         session_id: Optional[str] = None,
-        tools_server_port: int = 5055,
+        tools_server_host: Optional[str] = DEFAULT_SERVER_HOST,
+        tools_server_port: Optional[int] = DEFAULT_SERVER_PORT,
         interpreter_id: Optional[str] = None,
     ) -> None:
         global _CLIENT, _CONTAINER
@@ -179,6 +182,7 @@ class PythonExecutor:
                 )
 
         self.container = _CONTAINER
+        self.tools_server_host = tools_server_host
         self.tools_server_port = tools_server_port
         self.session_id = session_id
         self.interpreter_id: str = interpreter_id or get_unique_id()
@@ -195,7 +199,8 @@ class PythonExecutor:
     async def _check_tools(self) -> None:
         if not self.tool_names or self.tools_are_checked:
             return
-        available_tools = await fetch_tools(f"http://localhost:{self.tools_server_port}")
+        server_url = f"{self.tools_server_host}:{self.tools_server_port}"
+        available_tools = await fetch_tools(server_url)
         available_tool_names = [tool.name for tool in available_tools]
         for tool_name in self.tool_names:
             if tool_name.startswith("agent__"):

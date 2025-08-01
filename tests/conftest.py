@@ -87,11 +87,12 @@ class MCPServerTest:
         mcp_server.add_tool(arxiv_download)
         mcp_server.add_tool(show_image)
         app = mcp_server.streamable_http_app()
-        agent_app = get_agent_app(get_nested_agent())
+        host = "0.0.0.0"
+        agent_app = get_agent_app(get_nested_agent(), server_host=host, server_port=self.port)
         app.mount("/agents", agent_app)
         config = uvicorn.Config(
             app,
-            host="0.0.0.0",
+            host=host,
             port=self.port,
             log_level="error",
             access_log=False,

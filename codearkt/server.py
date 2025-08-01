@@ -47,7 +47,12 @@ AGENT_RESPONSE_HEADERS = {
 }
 
 
-def create_agent_endpoint(agent_app: FastAPI, agent_instance: CodeActAgent) -> Callable[..., Any]:
+def create_agent_endpoint(
+    agent_app: FastAPI,
+    agent_instance: CodeActAgent,
+    server_host: str,
+    server_port: int,
+) -> Callable[..., Any]:
     @agent_app.post(f"/{agent_instance.name}")  # type: ignore
     async def agent_tool(request: AgentRequest) -> Any:
         session_id = request.session_id or get_unique_id()
@@ -57,7 +62,11 @@ def create_agent_endpoint(agent_app: FastAPI, agent_instance: CodeActAgent) -> C
             async def stream_response() -> AsyncGenerator[str, None]:
                 task = asyncio.create_task(
                     agent_instance.ainvoke(
-                        messages=request.messages, session_id=session_id, event_bus=event_bus
+                        messages=request.messages,
+                        session_id=session_id,
+                        event_bus=event_bus,
+                        server_host=server_host,
+                        server_port=server_port,
                     )
                 )
                 event_bus.register_task(
@@ -89,7 +98,7 @@ class CancelRequest(BaseModel):  # type: ignore
     session_id: str
 
 
-def get_agent_app(main_agent: CodeActAgent) -> FastAPI:
+def get_agent_app(main_agent: CodeActAgent, server_host: str, server_port: int) -> FastAPI:
     agent_app = FastAPI(
         title="CodeArkt Agent App", description="Agent app for CodeArkt", version="1.0.0"
     )
@@ -97,7 +106,7 @@ def get_agent_app(main_agent: CodeActAgent) -> FastAPI:
     agent_cards = []
     for agent in main_agent.get_all_agents():
         agent_cards.append(AgentCard(name=agent.name, description=agent.description))
-        create_agent_endpoint(agent_app, agent)
+        create_agent_endpoint(agent_app, agent, server_host, server_port)
 
     async def cancel_session(request: CancelRequest) -> Dict[str, str]:
         event_bus.cancel_session(request.session_id)
@@ -118,8 +127,13 @@ def get_mcp_app(mcp_config: Optional[Dict[str, Any]]) -> Optional[FastAPI]:
     return proxy.http_app()
 
 
-def get_main_app(agent: CodeActAgent, mcp_config: Optional[Dict[str, Any]] = None) -> FastAPI:
-    agent_app = get_agent_app(agent)
+def get_main_app(
+    agent: CodeActAgent,
+    mcp_config: Optional[Dict[str, Any]] = None,
+    server_host: str = "0.0.0.0",
+    server_port: int = 5055,
+) -> FastAPI:
+    agent_app = get_agent_app(agent, server_host, server_port)
     mcp_app = get_mcp_app(mcp_config) or FastAPI()
     mcp_app.mount("/agents", agent_app)
     return mcp_app
@@ -128,7 +142,12 @@ def get_main_app(agent: CodeActAgent, mcp_config: Optional[Dict[str, Any]] = Non
 def run_server(
     agent: CodeActAgent, mcp_config: Dict[str, Any], host: str = "0.0.0.0", port: int = 5055
 ) -> None:
-    app = get_main_app(agent, mcp_config)
+    app = get_main_app(
+        agent=agent,
+        mcp_config=mcp_config,
+        server_host=host,
+        server_port=port,
+    )
     uvicorn.run(
         app,
         host=host,
@@ -142,10 +161,10 @@ def run_server(
 async def run_query(
     query: str, agent: CodeActAgent, mcp_config: Optional[Dict[str, Any]] = None
 ) -> str:
-    app = get_main_app(agent, mcp_config)
     host = "0.0.0.0"
     port = find_free_port()
     assert port is not None
+    app = get_main_app(agent, mcp_config, server_host=host, server_port=port)
 
     config = uvicorn.Config(
         app,
@@ -164,7 +183,7 @@ async def run_query(
         result = await agent.ainvoke(
             [ChatMessage(role="user", content=query)],
             session_id=get_unique_id(),
-            server_url=f"http://{host}:{port}",
+            server_host=host,
             server_port=port,
         )
     finally:
