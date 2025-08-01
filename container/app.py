@@ -19,6 +19,7 @@ WORKERS: Dict[str, "Worker"] = {}
 class Payload(BaseModel):  # type: ignore
     code: str
     tool_names: List[str]
+    tool_server_port: Optional[int] = None
     interpreter_id: Optional[str] = None
     session_id: Optional[str] = None
 
@@ -75,6 +76,7 @@ def _worker_main(request_q: multiprocessing.Queue, response_q: multiprocessing.Q
         if item is None:
             break
         code: str = item["code"]
+        tool_server_port: int = item["tool_server_port"]
         tool_names: List[str] = item["tool_names"]
         session_id: Optional[str] = item["session_id"]
         current_tools: Dict[str, Any] = dict()
@@ -82,7 +84,7 @@ def _worker_main(request_q: multiprocessing.Queue, response_q: multiprocessing.Q
         if tool_names:
             try:
                 if not _tools or any(name not in _tools for name in tool_names):
-                    _tools = asyncio.run(fetch_tools())
+                    _tools = asyncio.run(fetch_tools(tool_server_port))
 
                 current_tools = {name: _tools[name] for name in tool_names}
                 for name, fn in current_tools.items():
@@ -116,8 +118,21 @@ class Worker:
         )
         self._process.start()
 
-    def exec(self, code: str, tool_names: List[str], session_id: Optional[str]) -> Any:
-        self._request_q.put({"code": code, "tool_names": tool_names, "session_id": session_id})
+    def exec(
+        self,
+        code: str,
+        tool_server_port: Optional[int],
+        tool_names: List[str],
+        session_id: Optional[str],
+    ) -> Any:
+        self._request_q.put(
+            {
+                "code": code,
+                "tool_server_port": tool_server_port,
+                "tool_names": tool_names,
+                "session_id": session_id,
+            }
+        )
         return self._response_q.get()
 
     def terminate(self) -> None:
@@ -138,7 +153,12 @@ async def exec_code(payload: Payload) -> ExecResult:
 
     loop = asyncio.get_event_loop()
     result_dict: Dict[str, Any] = await loop.run_in_executor(
-        None, worker.exec, payload.code, payload.tool_names, payload.session_id
+        None,
+        worker.exec,
+        payload.code,
+        payload.tool_server_port,
+        payload.tool_names,
+        payload.session_id,
     )
     result: ExecResult = ExecResult.model_validate(result_dict)
     return result

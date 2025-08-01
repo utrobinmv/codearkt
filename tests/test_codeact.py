@@ -76,6 +76,8 @@ class TestCodeActAgent:
         result = await agent.ainvoke(
             [ChatMessage(role="user", content="Get the exact title of 2409.06820")],
             session_id=get_unique_id(),
+            server_host=mcp_server_test.host,
+            server_port=mcp_server_test.port,
         )
         assert "role-playing language models" in str(result).lower(), result
 
@@ -93,6 +95,8 @@ class TestCodeActAgent:
         result = await agent.ainvoke(
             [ChatMessage(role="user", content="Get the exact title of 2409.06820")],
             session_id=get_unique_id(),
+            server_host=mcp_server_test.host,
+            server_port=mcp_server_test.port,
         )
         assert "role-playing language models" in str(result).lower(), result
 
@@ -110,6 +114,8 @@ class TestCodeActAgent:
         result = await agent.ainvoke(
             [ChatMessage(role="user", content="Get the exact title of 2409.06820")],
             session_id=get_unique_id(),
+            server_host=mcp_server_test.host,
+            server_port=mcp_server_test.port,
         )
         assert "role-playing language models" not in str(result).lower(), result
 
@@ -130,6 +136,8 @@ class TestCodeActAgent:
                 )
             ],
             session_id=get_unique_id(),
+            server_host=mcp_server_test.host,
+            server_port=mcp_server_test.port,
         )
         assert "Player" in str(result), result
 
@@ -150,6 +158,8 @@ class TestCodeActAgent:
                 )
             ],
             session_id=get_unique_id(),
+            server_host=mcp_server_test.host,
+            server_port=mcp_server_test.port,
         )
         assert "role-playing language models" in str(result).lower(), result
 

@@ -18,8 +18,7 @@ from academia_mcp.tools import arxiv_download, arxiv_search
 
 from codearkt.llm import LLM
 from codearkt.codeact import CodeActAgent
-from codearkt.server import get_agent_app
-
+from codearkt.server import get_agent_app, DEFAULT_SERVER_HOST
 
 load_dotenv()
 for name in ("httpx", "mcp", "openai", "uvicorn"):
@@ -76,8 +75,9 @@ def reset_app_status() -> None:
 
 
 class MCPServerTest:
-    def __init__(self, port: int = 5055) -> None:
+    def __init__(self, port: int, host: str = DEFAULT_SERVER_HOST) -> None:
         self.port = port
+        self.host = host
         self._thread: threading.Thread | None = None
         self._started = threading.Event()
 
@@ -87,7 +87,6 @@ class MCPServerTest:
         mcp_server.add_tool(arxiv_download)
         mcp_server.add_tool(show_image)
         app = mcp_server.streamable_http_app()
-        host = "0.0.0.0"
         agent_app = get_agent_app(get_nested_agent(), server_host=host, server_port=self.port)
         app.mount("/agents", agent_app)
         config = uvicorn.Config(
@@ -136,7 +135,7 @@ class MCPServerTest:
 
 @pytest.fixture(scope="function")
 def mcp_server_test() -> Generator[MCPServerTest, None, None]:
-    server = MCPServerTest(port=5055)
+    server = MCPServerTest(port=6000)
     server.start()
     yield server
     server.stop()

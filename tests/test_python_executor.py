@@ -35,19 +35,6 @@ class TestPythonExecutor:
         assert result1.stdout == "Answer 1"
         assert result2.stdout == "Variable still here: Answer 1"
 
-    async def test_python_executor_mcp_invokation_no_tools(
-        self, mcp_server_test: MCPServerTest
-    ) -> None:
-        _ = mcp_server_test
-        python_executor = PythonExecutor()
-        result = await python_executor.invoke(SNIPPET_3)
-        assert (
-            result.stdout
-            != "Answer 1: Effect of surface magnetism on the x-ray spectra of hollow atoms"
-        )
-        assert result.error
-        assert "Error" in result.error
-
     async def test_python_executor_pip_install(self) -> None:
         python_executor = PythonExecutor()
         result = await python_executor.invoke(PIP_INSTALL_SNIPPET)
@@ -63,17 +50,37 @@ class TestPythonExecutor:
         result = await python_executor.invoke("r = {'a': 4}\nr")
         assert result.result == {"a": 4}
 
-    async def test_python_executor_mcp_invokation(
+    async def test_python_executor_mcp_invokation_no_tools(
+        self, mcp_server_test: MCPServerTest
+    ) -> None:
+        _ = mcp_server_test
+        python_executor = PythonExecutor(
+            tools_server_host=mcp_server_test.host,
+            tools_server_port=mcp_server_test.port,
+        )
+        result = await python_executor.invoke(SNIPPET_3)
+        assert (
+            result.stdout
+            != "Answer 1: Effect of surface magnetism on the x-ray spectra of hollow atoms"
+        )
+        assert result.error
+        assert "Error" in result.error
+
+    async def test_python_executor_mcp_invokation_tool(
         self,
         mcp_server_test: MCPServerTest,
     ) -> None:
         _ = mcp_server_test
-        executor = PythonExecutor(tool_names=["arxiv_download"])
+        executor = PythonExecutor(
+            tool_names=["arxiv_download"],
+            tools_server_host=mcp_server_test.host,
+            tools_server_port=mcp_server_test.port,
+        )
         result = await executor.invoke(SNIPPET_3)
         assert (
             result.stdout
             == "Answer 1: Effect of surface magnetism on the x-ray spectra of hollow atoms"
-        )
+        ), str(result)
 
     async def test_python_executor_non_existing_tool(self) -> None:
         executor = PythonExecutor(tool_names=["arxiv_download"])

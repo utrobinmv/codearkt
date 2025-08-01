@@ -13,6 +13,9 @@ from codearkt.llm import ChatMessage
 from codearkt.event_bus import AgentEventBus
 from codearkt.util import get_unique_id
 
+DEFAULT_SERVER_HOST = "0.0.0.0"
+DEFAULT_SERVER_PORT = 5055
+
 
 event_bus = AgentEventBus()
 fastmcp_settings.stateless_http = True
@@ -27,6 +30,11 @@ def find_free_port() -> Optional[int]:
         except Exception:
             continue
     return None
+
+
+async def _wait_until_started(server: uvicorn.Server) -> None:
+    while not server.started:
+        await asyncio.sleep(0.05)
 
 
 class AgentRequest(BaseModel):  # type: ignore
@@ -87,7 +95,11 @@ def create_agent_endpoint(
             )
         else:
             result = await agent_instance.ainvoke(
-                messages=request.messages, session_id=session_id, event_bus=event_bus
+                messages=request.messages,
+                session_id=session_id,
+                event_bus=event_bus,
+                server_host=server_host,
+                server_port=server_port,
             )
             return result
 
@@ -130,8 +142,8 @@ def get_mcp_app(mcp_config: Optional[Dict[str, Any]]) -> Optional[FastAPI]:
 def get_main_app(
     agent: CodeActAgent,
     mcp_config: Optional[Dict[str, Any]] = None,
-    server_host: str = "0.0.0.0",
-    server_port: int = 5055,
+    server_host: str = DEFAULT_SERVER_HOST,
+    server_port: int = DEFAULT_SERVER_PORT,
 ) -> FastAPI:
     agent_app = get_agent_app(agent, server_host, server_port)
     mcp_app = get_mcp_app(mcp_config) or FastAPI()
@@ -140,7 +152,10 @@ def get_main_app(
 
 
 def run_server(
-    agent: CodeActAgent, mcp_config: Dict[str, Any], host: str = "0.0.0.0", port: int = 5055
+    agent: CodeActAgent,
+    mcp_config: Dict[str, Any],
+    host: str = DEFAULT_SERVER_HOST,
+    port: int = DEFAULT_SERVER_PORT,
 ) -> None:
     app = get_main_app(
         agent=agent,
@@ -161,7 +176,7 @@ def run_server(
 async def run_query(
     query: str, agent: CodeActAgent, mcp_config: Optional[Dict[str, Any]] = None
 ) -> str:
-    host = "0.0.0.0"
+    host = DEFAULT_SERVER_HOST
     port = find_free_port()
     assert port is not None
     app = get_main_app(agent, mcp_config, server_host=host, server_port=port)
@@ -191,8 +206,3 @@ async def run_query(
         await server_task
 
     return result
-
-
-async def _wait_until_started(server: uvicorn.Server) -> None:
-    while not server.started:
-        await asyncio.sleep(0.05)

@@ -3,15 +3,14 @@ import asyncio
 import functools
 import httpx
 import traceback
-from typing import List, Dict, Callable, Any
+from typing import List, Dict, Callable, Any, Optional
 
 from mcp import ClientSession, Tool
 from mcp.types import ContentBlock
 from mcp.client.streamable_http import streamablehttp_client
 
-SERVER_PORT = os.getenv("SERVER_PORT", "5055")
 AGENT_TIMEOUT = int(os.getenv("AGENT_TIMEOUT", 600))
-SERVER_URL = f"http://host.docker.internal:{SERVER_PORT}"
+SERVER_URL_TEMPLATE = "http://host.docker.internal:{port}"
 
 
 ToolReturnType = List[ContentBlock] | str | None
@@ -19,8 +18,9 @@ ToolReturnType = List[ContentBlock] | str | None
 _tool_schemas: Dict[str, Tool] = {}
 
 
-async def _acall(tool: str, *args: Any, **kwargs: Any) -> ToolReturnType:
-    async with streamablehttp_client(SERVER_URL + "/mcp") as (
+async def _acall(tool: str, tool_server_port: int, *args: Any, **kwargs: Any) -> ToolReturnType:
+    base_url = SERVER_URL_TEMPLATE.format(port=tool_server_port)
+    async with streamablehttp_client(base_url + "/mcp") as (
         read_stream,
         write_stream,
         _,
@@ -53,16 +53,23 @@ async def _acall(tool: str, *args: Any, **kwargs: Any) -> ToolReturnType:
             return content_blocks
 
 
-def _call(tool: str, *args: Any, **kwargs: Any) -> List[ContentBlock] | str | None:
-    return asyncio.run(_acall(tool, *args, **kwargs))
+def _call(
+    tool: str, tool_server_port: int, *args: Any, **kwargs: Any
+) -> List[ContentBlock] | str | None:
+    return asyncio.run(_acall(tool, tool_server_port, *args, **kwargs))
 
 
-async def fetch_tools() -> Dict[str, Callable[..., ToolReturnType]]:
+async def fetch_tools(
+    tool_server_port: Optional[int] = None,
+) -> Dict[str, Callable[..., ToolReturnType]]:
+    if not tool_server_port:
+        return {}
     global _tool_schemas
     final_tools = {}
-    print("Tools server URL", SERVER_URL)
+    base_url = SERVER_URL_TEMPLATE.format(port=tool_server_port)
+    print("Tools server URL", base_url)
     try:
-        async with streamablehttp_client(SERVER_URL + "/mcp") as (
+        async with streamablehttp_client(base_url + "/mcp") as (
             read_stream,
             write_stream,
             _,
@@ -75,7 +82,9 @@ async def fetch_tools() -> Dict[str, Callable[..., ToolReturnType]]:
                 _tool_schemas = {tool.name: tool for tool in tools}
 
                 for tool in tools:
-                    tool_fn: Callable[..., ToolReturnType] = functools.partial(_call, tool.name)
+                    tool_fn: Callable[..., ToolReturnType] = functools.partial(
+                        _call, tool.name, tool_server_port
+                    )
                     final_tools[tool.name] = tool_fn
     except Exception:
         print("Failed to fetch MCP tools")
@@ -85,7 +94,7 @@ async def fetch_tools() -> Dict[str, Callable[..., ToolReturnType]]:
     agent_cards = []
     try:
         async with httpx.AsyncClient(timeout=10) as client:
-            response = await client.get(SERVER_URL + "/agents/list")
+            response = await client.get(base_url + "/agents/list")
             response.raise_for_status()
             agent_cards = response.json()
     except Exception:
@@ -95,7 +104,7 @@ async def fetch_tools() -> Dict[str, Callable[..., ToolReturnType]]:
 
     for card in agent_cards:
         agent_name = card["name"]
-        url = SERVER_URL + f"/agents/{agent_name}"
+        url = base_url + f"/agents/{agent_name}"
 
         def create_call_agent(url: str) -> Callable[..., Any]:
             def _call_agent(query: str, session_id: str) -> Any:

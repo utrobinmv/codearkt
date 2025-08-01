@@ -26,8 +26,6 @@ CLEANUP_TIMEOUT: int = 30
 PIDS_LIMIT: int = 64
 NET_NAME: str = "sandbox_net"
 CONTAINER_NAME: str = "codearkt_http"
-DEFAULT_SERVER_HOST = "localhost"
-DEFAULT_SERVER_PORT = 5055
 
 _CLIENT: Optional[DockerClient] = None
 _CONTAINER: Optional[Container] = None
@@ -134,8 +132,8 @@ class PythonExecutor:
         self,
         tool_names: Sequence[str] = tuple(),
         session_id: Optional[str] = None,
-        tools_server_host: Optional[str] = DEFAULT_SERVER_HOST,
-        tools_server_port: Optional[int] = DEFAULT_SERVER_PORT,
+        tools_server_host: Optional[str] = None,
+        tools_server_port: Optional[int] = None,
         interpreter_id: Optional[str] = None,
     ) -> None:
         global _CLIENT, _CONTAINER
@@ -178,7 +176,6 @@ class PythonExecutor:
                     sysctls={"net.ipv4.ip_forward": "0"},
                     network=net.name,
                     dns=[],
-                    environment={"SERVER_PORT": str(tools_server_port)},
                 )
 
         self.container = _CONTAINER
@@ -196,24 +193,28 @@ class PythonExecutor:
         result = await self._call_exec(code)
         return result
 
+    def _are_tools_available(self) -> bool:
+        return bool(self.tool_names and self.tools_server_host and self.tools_server_port)
+
     async def _check_tools(self) -> None:
-        if not self.tool_names or self.tools_are_checked:
-            return
-        server_url = f"{self.tools_server_host}:{self.tools_server_port}"
-        available_tools = await fetch_tools(server_url)
-        available_tool_names = [tool.name for tool in available_tools]
+        available_tool_names = []
+        if self._are_tools_available() and not self.tools_are_checked:
+            server_url = f"{self.tools_server_host}:{self.tools_server_port}"
+            available_tools = await fetch_tools(server_url)
+            available_tool_names = [tool.name for tool in available_tools]
         for tool_name in self.tool_names:
             if tool_name.startswith("agent__"):
                 continue
             if tool_name not in available_tool_names:
-                raise ValueError(f"Tool {tool_name} not found in MCP server")
+                raise ValueError(f"Tool {tool_name} not found in {available_tool_names}")
         self.tools_are_checked = True
 
     async def _call_exec(self, code: str, send_tools: bool = True) -> ExecResult:
         payload = {
             "code": textwrap.dedent(code),
             "session_id": self.session_id,
-            "tool_names": self.tool_names if send_tools else [],
+            "tool_server_port": self.tools_server_port,
+            "tool_names": self.tool_names if send_tools and self._are_tools_available() else [],
             "interpreter_id": self.interpreter_id,
         }
 

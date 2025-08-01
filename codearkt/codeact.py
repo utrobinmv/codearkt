@@ -10,7 +10,7 @@ import yaml
 from mcp import Tool
 from jinja2 import Template
 
-from codearkt.python_executor import PythonExecutor, DEFAULT_SERVER_HOST, DEFAULT_SERVER_PORT
+from codearkt.python_executor import PythonExecutor
 from codearkt.tools import fetch_tools
 from codearkt.event_bus import AgentEventBus, EventType
 from codearkt.llm import LLM, ChatMessages, ChatMessage, FunctionCall, ToolCall
@@ -125,8 +125,8 @@ class CodeActAgent:
         messages: ChatMessages,
         session_id: str,
         event_bus: AgentEventBus | None = None,
-        server_host: Optional[str] = DEFAULT_SERVER_HOST,
-        server_port: Optional[int] = DEFAULT_SERVER_PORT,
+        server_host: Optional[str] = None,
+        server_port: Optional[int] = None,
     ) -> str:
         messages = copy.deepcopy(messages)
 
@@ -142,12 +142,19 @@ class CodeActAgent:
                 tool_names=self.tool_names,
                 interpreter_id=run_id,
                 tools_server_port=server_port,
+                tools_server_host=server_host,
             )
             self._log("Python interpreter started", run_id=run_id, session_id=session_id)
 
             # Check tools
             tools = []
             fetched_tool_names = []
+            self._log(
+                f"Server host: {server_host}, server port: {server_port}",
+                run_id=run_id,
+                session_id=session_id,
+                level=logging.DEBUG,
+            )
             if server_host and server_port:
                 server_url = f"{server_host}:{server_port}"
                 tools = await fetch_tools(server_url)
@@ -157,6 +164,7 @@ class CodeActAgent:
                     f"Fetched tools: {fetched_tool_names}",
                     run_id=run_id,
                     session_id=session_id,
+                    level=logging.DEBUG,
                 )
 
             for tool_name in self.tool_names:
