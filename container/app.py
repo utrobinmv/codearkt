@@ -3,17 +3,36 @@ import contextlib
 import traceback
 import asyncio
 import ast
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Callable
 from functools import partial
 import multiprocessing
+import time
+import logging
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from pydantic import BaseModel
 
 from tools import fetch_tools  # type: ignore
 
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+
 app = FastAPI(title="CodeArkt code runtime")
 WORKERS: Dict[str, "Worker"] = {}
+
+
+@app.middleware("http")  # type: ignore
+async def log_requests(request: Request, call_next: Callable[[Request], Any]) -> Any:
+    start_time = time.perf_counter()
+    response = await call_next(request)
+    duration_ms = (time.perf_counter() - start_time) * 1000
+    logging.info(
+        "%s %s completed in %.2f ms with status %d",
+        request.method,
+        request.url.path,
+        duration_ms,
+        response.status_code,
+    )
+    return response
 
 
 class Payload(BaseModel):  # type: ignore

@@ -18,7 +18,7 @@ from codearkt.tools import fetch_tools
 from codearkt.util import get_unique_id
 
 
-IMAGE: str = "phoenix120/codearkt_http"
+IMAGE: str = "phoenix120/codearkt_http:v1"
 MEM_LIMIT: str = "512m"
 CPU_QUOTA: int = 50000
 CPU_PERIOD: int = 100000
