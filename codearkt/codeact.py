@@ -357,7 +357,7 @@ class CodeActAgent:
             self.prompts.plan_prefix is not None
         ), "Plan prefix is not set, but planning is enabled"
 
-        conversation = "\n\n".join([f"{m.role}: {m.content}" for m in messages])
+        conversation = "\n\n".join([f"{m.role}: {m.content}" for m in messages[1:]])
         planning_prompt = self.prompts.plan.render(conversation=conversation, tools=tools)
         input_messages = [ChatMessage(role="user", content=planning_prompt)]
 
