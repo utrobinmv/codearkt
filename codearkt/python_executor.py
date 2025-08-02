@@ -197,16 +197,20 @@ class PythonExecutor:
         return bool(self.tool_names and self.tools_server_host and self.tools_server_port)
 
     async def _check_tools(self) -> None:
+        if self.tools_are_checked:
+            return
+
         available_tool_names = []
-        if self._are_tools_available() and not self.tools_are_checked:
+        if self._are_tools_available():
             server_url = f"{self.tools_server_host}:{self.tools_server_port}"
             available_tools = await fetch_tools(server_url)
             available_tool_names = [tool.name for tool in available_tools]
-            for tool_name in self.tool_names:
-                if tool_name.startswith("agent__"):
-                    continue
-                if tool_name not in available_tool_names:
-                    raise ValueError(f"Tool {tool_name} not found in {available_tool_names}")
+
+        for tool_name in self.tool_names:
+            if tool_name.startswith("agent__"):
+                continue
+            if tool_name not in available_tool_names:
+                raise ValueError(f"Tool {tool_name} not found in {available_tool_names}")
         self.tools_are_checked = True
 
     async def _call_exec(self, code: str, send_tools: bool = True) -> ExecResult:
