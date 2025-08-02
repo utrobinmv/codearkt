@@ -173,7 +173,6 @@ class CodeActAgent:
                 ), f"Tool {tool_name} not found in {fetched_tool_names}"
 
             system_prompt = self.prompts.system.render(tools=tools)
-            self._log(f"Available tools: {self.tool_names}", run_id=run_id, session_id=session_id)
 
             # Form input messages
             messages = fix_code_actions(messages)
