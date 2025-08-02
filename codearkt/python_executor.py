@@ -10,6 +10,7 @@ from typing import Optional, Any, List, Dict, Sequence
 import docker
 from docker.models.containers import Container
 from docker.client import DockerClient
+from docker.models.networks import Network
 from pydantic import BaseModel
 
 from codearkt.llm import ChatMessage
@@ -127,6 +128,43 @@ def init_docker() -> docker.DockerClient:
     return client
 
 
+def run_network(client: DockerClient) -> Network:
+    try:
+        net = client.networks.get(NET_NAME)
+    except docker.errors.NotFound:
+        net = client.networks.create(
+            NET_NAME,
+            driver="bridge",
+            internal=False,
+            options={
+                "com.docker.network.bridge.enable_ip_masquerade": "false",
+            },
+        )
+    return net
+
+
+def run_container(client: DockerClient, net_name: str) -> Container:
+    return client.containers.run(
+        IMAGE,
+        name=CONTAINER_NAME,
+        detach=True,
+        auto_remove=True,
+        ports={"8000/tcp": None},
+        mem_limit=MEM_LIMIT,
+        cpu_period=CPU_PERIOD,
+        cpu_quota=CPU_QUOTA,
+        pids_limit=PIDS_LIMIT,
+        cap_drop=["ALL"],
+        read_only=True,
+        tmpfs={"/tmp": "rw,size=64m", "/run": "rw,size=16m"},
+        security_opt=["no-new-privileges"],
+        extra_hosts={"host.docker.internal": "host-gateway"},
+        sysctls={"net.ipv4.ip_forward": "0"},
+        network=net_name,
+        dns=[],
+    )
+
+
 class PythonExecutor:
     def __init__(
         self,
@@ -142,41 +180,12 @@ class PythonExecutor:
             _CLIENT = init_docker()
         client = _CLIENT
 
-        if _CONTAINER is None:
+        if not _CONTAINER:
             try:
                 _CONTAINER = _CLIENT.containers.get(CONTAINER_NAME)
             except docker.errors.NotFound:
-                try:
-                    net = client.networks.get(NET_NAME)
-                except docker.errors.NotFound:
-                    net = client.networks.create(
-                        NET_NAME,
-                        driver="bridge",
-                        internal=False,
-                        options={
-                            "com.docker.network.bridge.enable_ip_masquerade": "false",
-                        },
-                    )
-
-                _CONTAINER = client.containers.run(
-                    IMAGE,
-                    name=CONTAINER_NAME,
-                    detach=True,
-                    auto_remove=True,
-                    ports={"8000/tcp": None},
-                    mem_limit=MEM_LIMIT,
-                    cpu_period=CPU_PERIOD,
-                    cpu_quota=CPU_QUOTA,
-                    pids_limit=PIDS_LIMIT,
-                    cap_drop=["ALL"],
-                    read_only=True,
-                    tmpfs={"/tmp": "rw,size=64m", "/run": "rw,size=16m"},
-                    security_opt=["no-new-privileges"],
-                    extra_hosts={"host.docker.internal": "host-gateway"},
-                    sysctls={"net.ipv4.ip_forward": "0"},
-                    network=net.name,
-                    dns=[],
-                )
+                net = run_network(client)
+                _CONTAINER = run_container(client, str(net.name))
 
         self.container = _CONTAINER
         self.tools_server_host = tools_server_host
@@ -186,10 +195,17 @@ class PythonExecutor:
         self.tool_names = tool_names
         self.tools_are_checked = False
         self.url = self._get_url()
+        self.is_ready = False
 
     async def invoke(self, code: str) -> ExecResult:
-        await self._check_tools()
-        await self._wait_for_ready()
+        if not self.tools_are_checked:
+            await self._check_tools()
+            self.tools_are_checked = True
+
+        if not self.is_ready:
+            await self._wait_for_ready()
+            self.is_ready = True
+
         result = await self._call_exec(code)
         return result
 
@@ -197,8 +213,7 @@ class PythonExecutor:
         return bool(self.tool_names and self.tools_server_host and self.tools_server_port)
 
     async def _check_tools(self) -> None:
-        if self.tools_are_checked:
-            return
+        assert not self.tools_are_checked
 
         available_tool_names = []
         if self._are_tools_available():
@@ -211,7 +226,6 @@ class PythonExecutor:
                 continue
             if tool_name not in available_tool_names:
                 raise ValueError(f"Tool {tool_name} not found in {available_tool_names}")
-        self.tools_are_checked = True
 
     async def _call_exec(self, code: str, send_tools: bool = True) -> ExecResult:
         payload = {
