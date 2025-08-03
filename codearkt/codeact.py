@@ -2,8 +2,8 @@ import re
 import copy
 import logging
 from pathlib import Path
-from dataclasses import dataclass
-from typing import List, Self, Dict, Any, Optional, Sequence
+from dataclasses import dataclass, field
+from typing import List, Self, Dict, Any, Optional, Sequence, get_args
 
 import yaml
 
@@ -16,11 +16,10 @@ from codearkt.event_bus import AgentEventBus, EventType
 from codearkt.llm import LLM, ChatMessages, ChatMessage, FunctionCall, ToolCall
 from codearkt.util import get_unique_id
 
-
-END_CODE_SEQUENCE = "<end_code>"
-END_PLAN_SEQUENCE = "<end_plan>"
-STOP_SEQUENCES = [END_CODE_SEQUENCE, "Observation:", "Calling tools:"]
-CURRENT_DIR = Path(__file__).parent
+DEFAULT_END_CODE_SEQUENCE = "<end_code>"
+DEFAULT_END_PLAN_SEQUENCE = "<end_plan>"
+DEFAULT_STOP_SEQUENCES = [DEFAULT_END_CODE_SEQUENCE, "Observation:", "Calling tools:"]
+AGENT_TOOL_PREFIX = "agent__"
 
 
 def extract_code_from_text(text: str) -> str | None:
@@ -31,7 +30,9 @@ def extract_code_from_text(text: str) -> str | None:
     return None
 
 
-def fix_code_actions(messages: List[ChatMessage]) -> List[ChatMessage]:
+def convert_code_to_content(
+    messages: List[ChatMessage], end_code_sequence: str
+) -> List[ChatMessage]:
     for message in messages:
         if message.role != "assistant":
             continue
@@ -47,7 +48,7 @@ def fix_code_actions(messages: List[ChatMessage]) -> List[ChatMessage]:
             if not code_action.endswith("```"):
                 code_action = code_action.rstrip("`")
                 code_action += "```"
-            code_action = code_action.strip() + END_CODE_SEQUENCE
+            code_action = code_action.strip() + end_code_sequence
             if isinstance(message.content, str):
                 message.content += "\n" + code_action
             else:
@@ -62,20 +63,32 @@ class Prompts:
     final: Template
     plan: Optional[Template] = None
     plan_prefix: Optional[Template] = None
+    end_code_sequence: str = DEFAULT_END_CODE_SEQUENCE
+    end_plan_sequence: str = DEFAULT_END_PLAN_SEQUENCE
+    stop_sequences: List[str] = field(default_factory=lambda: DEFAULT_STOP_SEQUENCES)
 
     @classmethod
     def load(cls, path: str | Path) -> Self:
         with open(path) as f:
             template = f.read()
         templates: Dict[str, Any] = yaml.safe_load(template)
-        wrapped_templates = {}
+        wrapped_templates: Dict[str, Any] = {}
         for key, value in templates.items():
-            wrapped_templates[key] = Template(value)
+            if value is None:
+                continue
+            field_type = cls.__annotations__.get(key)
+            if field_type is Template or Template in get_args(field_type):
+                wrapped_templates[key] = Template(value)
+            elif field_type is str:
+                wrapped_templates[key] = value.strip()
+            else:
+                wrapped_templates[key] = value
         return cls(**wrapped_templates)
 
     @classmethod
     def default(cls) -> Self:
-        return cls.load(CURRENT_DIR / "prompts" / "default.yaml")
+        current_dir = Path(__file__).parent
+        return cls.load(current_dir / "prompts" / "default.yaml")
 
 
 class CodeActAgent:
@@ -100,9 +113,10 @@ class CodeActAgent:
         self.verbosity_level = verbosity_level
         self.planning_interval = planning_interval
         self.managed_agents: Optional[List[Self]] = managed_agents
+
         if self.managed_agents:
             for agent in self.managed_agents:
-                agent_tool_name = "agent__" + agent.name
+                agent_tool_name = AGENT_TOOL_PREFIX + agent.name
                 if agent_tool_name not in self.tool_names:
                     self.tool_names.append(agent_tool_name)
 
@@ -130,13 +144,11 @@ class CodeActAgent:
     ) -> str:
         messages = copy.deepcopy(messages)
 
-        # Register agent start
         run_id = get_unique_id()
         await self._publish_event(event_bus, session_id, EventType.AGENT_START)
         self._log(f"Starting agent {self.name}", run_id=run_id, session_id=session_id)
 
         try:
-            # Initialize Python interpreter
             python_executor = PythonExecutor(
                 session_id=session_id,
                 tool_names=self.tool_names,
@@ -145,37 +157,24 @@ class CodeActAgent:
                 tools_server_host=server_host,
             )
             self._log("Python interpreter started", run_id=run_id, session_id=session_id)
-
-            # Check tools
-            tools = []
-            fetched_tool_names = []
             self._log(
-                f"Server host: {server_host}, server port: {server_port}",
+                f"Host: {server_host}, port: {server_port}",
                 run_id=run_id,
                 session_id=session_id,
-                level=logging.DEBUG,
             )
-            if server_host and server_port:
-                server_url = f"{server_host}:{server_port}"
-                tools = await fetch_tools(server_url)
-                tools = [tool for tool in tools if tool.name in self.tool_names]
-                fetched_tool_names = [tool.name for tool in tools]
-                self._log(
-                    f"Fetched tools: {fetched_tool_names}",
-                    run_id=run_id,
-                    session_id=session_id,
-                    level=logging.DEBUG,
-                )
 
-            for tool_name in self.tool_names:
-                assert (
-                    tool_name in fetched_tool_names
-                ), f"Tool {tool_name} not found in {fetched_tool_names}"
-
+            tools = await self._get_tools(server_host=server_host, server_port=server_port)
+            self._log(
+                f"Fetched tools: {[tool.name for tool in tools]}",
+                run_id=run_id,
+                session_id=session_id,
+            )
             system_prompt = self.prompts.system.render(tools=tools)
 
             # Form input messages
-            messages = fix_code_actions(messages)
+            messages = convert_code_to_content(
+                messages, end_code_sequence=self.prompts.end_code_sequence
+            )
             messages = [ChatMessage(role="system", content=system_prompt)] + messages
 
             for step_number in range(1, self.max_iterations + 1):
@@ -216,6 +215,7 @@ class CodeActAgent:
                 )
                 messages.extend(new_messages)
                 self._log("Final step completed", run_id=run_id, session_id=session_id)
+
         except Exception as e:
             self._log(
                 f"Agent {self.name} failed with error: {e}",
@@ -232,6 +232,25 @@ class CodeActAgent:
         self._log(f"Agent {self.name} completed successfully", run_id=run_id, session_id=session_id)
         return str(messages[-1].content)
 
+    async def _get_tools(
+        self,
+        server_host: Optional[str],
+        server_port: Optional[int],
+    ) -> List[Tool]:
+        tools = []
+        fetched_tool_names = []
+        if server_host and server_port:
+            server_url = f"{server_host}:{server_port}"
+            tools = await fetch_tools(server_url)
+            tools = [tool for tool in tools if tool.name in self.tool_names]
+            fetched_tool_names = [tool.name for tool in tools]
+
+        for tool_name in self.tool_names:
+            assert (
+                tool_name in fetched_tool_names
+            ), f"Tool {tool_name} not found in {fetched_tool_names}"
+        return tools
+
     async def _step(
         self,
         messages: ChatMessages,
@@ -243,7 +262,7 @@ class CodeActAgent:
         self._log(
             f"Step inputs: {messages}", run_id=run_id, session_id=session_id, level=logging.DEBUG
         )
-        output_stream = self.llm.astream(messages, stop=STOP_SEQUENCES)
+        output_stream = self.llm.astream(messages, stop=self.prompts.stop_sequences)
 
         output_text = ""
         async for event in output_stream:
@@ -258,9 +277,9 @@ class CodeActAgent:
         if (
             output_text
             and output_text.strip().endswith("```")
-            and not output_text.strip().endswith(END_CODE_SEQUENCE)
+            and not output_text.strip().endswith(self.prompts.end_code_sequence)
         ):
-            chunk = END_CODE_SEQUENCE + "\n"
+            chunk = self.prompts.end_code_sequence + "\n"
             output_text += chunk
 
         self._log(
@@ -288,6 +307,8 @@ class CodeActAgent:
         )
         await self._publish_event(event_bus, session_id, EventType.TOOL_CALL, code_action)
         new_messages.append(tool_call_message)
+
+        # Execute code
         try:
             code_result = await python_executor.invoke(code_action)
             self._log(
@@ -327,7 +348,7 @@ class CodeActAgent:
             level=logging.DEBUG,
         )
 
-        output_stream = self.llm.astream(input_messages, stop=STOP_SEQUENCES)
+        output_stream = self.llm.astream(input_messages, stop=self.prompts.stop_sequences)
         output_text = ""
         async for event in output_stream:
             if isinstance(event.content, str):
@@ -336,6 +357,7 @@ class CodeActAgent:
                 chunk = "\n".join([str(item) for item in event.content])
             output_text += chunk
             await self._publish_event(event_bus, session_id, EventType.OUTPUT, chunk)
+
         self._log(
             f"Final message: {final_message}",
             run_id=run_id,
@@ -361,7 +383,7 @@ class CodeActAgent:
         planning_prompt = self.prompts.plan.render(conversation=conversation, tools=tools)
         input_messages = [ChatMessage(role="user", content=planning_prompt)]
 
-        output_stream = self.llm.astream(input_messages, stop=[END_PLAN_SEQUENCE])
+        output_stream = self.llm.astream(input_messages, stop=[self.prompts.end_plan_sequence])
 
         plan_prefix = self.prompts.plan_prefix.render().strip() + "\n\n"
         await self._publish_event(event_bus, session_id, EventType.OUTPUT, plan_prefix)
