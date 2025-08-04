@@ -13,12 +13,12 @@ import uvicorn
 from PIL import Image
 from dotenv import load_dotenv
 from mcp.server.fastmcp import FastMCP
-from sse_starlette.sse import AppStatus
 from academia_mcp.tools import arxiv_download, arxiv_search
 
 from codearkt.llm import LLM
 from codearkt.codeact import CodeActAgent
-from codearkt.server import get_agent_app, DEFAULT_SERVER_HOST
+from codearkt.server import get_agent_app, DEFAULT_SERVER_HOST, reset_app_status
+from codearkt.event_bus import AgentEventBus
 
 load_dotenv()
 for name in ("httpx", "mcp", "openai", "uvicorn"):
@@ -69,11 +69,6 @@ def show_image(url: str) -> Dict[str, str]:
     return {"image_base64": base64.b64encode(img_bytes).decode("utf-8")}
 
 
-def reset_app_status() -> None:
-    AppStatus.should_exit = False
-    AppStatus.should_exit_event = None
-
-
 class MCPServerTest:
     def __init__(self, port: int, host: str = DEFAULT_SERVER_HOST) -> None:
         self.port = port
@@ -82,12 +77,18 @@ class MCPServerTest:
         self._started = threading.Event()
 
         reset_app_status()
+        event_bus = AgentEventBus()
         mcp_server = FastMCP("Academia MCP", stateless_http=True)
         mcp_server.add_tool(arxiv_search)
         mcp_server.add_tool(arxiv_download)
         mcp_server.add_tool(show_image)
         app = mcp_server.streamable_http_app()
-        agent_app = get_agent_app(get_nested_agent(), server_host=host, server_port=self.port)
+        agent_app = get_agent_app(
+            get_nested_agent(),
+            server_host=host,
+            server_port=self.port,
+            event_bus=event_bus,
+        )
         app.mount("/agents", agent_app)
         config = uvicorn.Config(
             app,

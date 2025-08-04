@@ -19,7 +19,7 @@ class EventType(StrEnum):
 class AgentEvent(BaseModel):  # type: ignore
     session_id: str
     agent_name: str
-    event_type: str
+    event_type: EventType
     content: Optional[str] = None
 
 
@@ -64,6 +64,7 @@ class AgentEventBus:
         if session_id not in self.queues:
             self.queues[session_id] = asyncio.Queue()
         queue = self.queues[session_id]
+        assert session_id in self.root_agent_name, f"Session {session_id} is not tied to an agent"
         root_agent_name = self.root_agent_name[session_id]
         is_agent_end = False
         is_root_agent = True

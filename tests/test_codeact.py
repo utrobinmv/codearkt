@@ -1,11 +1,13 @@
 import asyncio
 from textwrap import dedent
 
+from academia_mcp.tools import arxiv_search
+
 from codearkt.codeact import CodeActAgent, extract_code_from_text
 from codearkt.llm import ChatMessage, LLM
 from codearkt.event_bus import AgentEventBus, EventType
 from codearkt.util import get_unique_id
-from codearkt.server import run_query
+from codearkt.server import run_query, run_batch
 
 from tests.conftest import MCPServerTest, get_nested_agent
 
@@ -230,3 +232,36 @@ class TestCodeActAgent:
         result = await run_query("What is 432412421249 * 4332144219?", agent, {})
         str_result = str(result).replace(",", "").replace(".", "").replace(" ", "")
         assert "1873272970937648109531" in str_result, str_result
+
+    async def test_run_query_additional_tools(self, deepseek: LLM) -> None:
+        agent_name = "agent"
+        agent = CodeActAgent(
+            name=agent_name,
+            description="Just agent",
+            llm=deepseek,
+            tool_names=["arxiv_search"],
+        )
+        result = await run_query(
+            "Get the exact title of 2409.06820v4.", agent, {}, additional_tools=[arxiv_search]
+        )
+        assert "role-playing language models" in str(result).lower(), result
+
+    async def test_run_batch(self, deepseek: LLM) -> None:
+        agent_name = "agent"
+        agent = CodeActAgent(
+            name=agent_name,
+            description="Just agent",
+            llm=deepseek,
+            tool_names=["arxiv_search"],
+        )
+        results = await run_batch(
+            ["What is 432412421249 * 4332144219?", "Get the exact title of 2409.06820v4."],
+            agent,
+            {},
+            additional_tools=[arxiv_search],
+        )
+        assert len(results) == 2, results
+        result1 = str(results[0]).replace(",", "").replace(".", "").replace(" ", "")
+        assert "1873272970937648109531" in result1, result1
+        result2 = str(results[1]).lower()
+        assert "role-playing language models" in result2, result2

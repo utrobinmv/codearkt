@@ -1,5 +1,4 @@
 import asyncio
-import socket
 from typing import Dict, Any, Optional, List, Callable, AsyncGenerator
 
 import uvicorn
@@ -7,34 +6,28 @@ from fastmcp import FastMCP, settings as fastmcp_settings
 from fastapi import FastAPI
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+from sse_starlette.sse import AppStatus
 
 from codearkt.codeact import CodeActAgent
 from codearkt.llm import ChatMessage
 from codearkt.event_bus import AgentEventBus
-from codearkt.util import get_unique_id
+from codearkt.util import get_unique_id, find_free_port
 
 DEFAULT_SERVER_HOST = "0.0.0.0"
 DEFAULT_SERVER_PORT = 5055
 
 
-event_bus = AgentEventBus()
 fastmcp_settings.stateless_http = True
-
-
-def find_free_port() -> Optional[int]:
-    for port in range(5000, 6001):
-        try:
-            with socket.socket() as s:
-                s.bind(("", port))
-                return port
-        except Exception:
-            continue
-    return None
 
 
 async def _wait_until_started(server: uvicorn.Server) -> None:
     while not server.started:
         await asyncio.sleep(0.05)
+
+
+def reset_app_status() -> None:
+    AppStatus.should_exit = False
+    AppStatus.should_exit_event = None
 
 
 class AgentRequest(BaseModel):  # type: ignore
@@ -60,6 +53,7 @@ def create_agent_endpoint(
     agent_instance: CodeActAgent,
     server_host: str,
     server_port: int,
+    event_bus: AgentEventBus,
 ) -> Callable[..., Any]:
     @agent_app.post(f"/{agent_instance.name}")  # type: ignore
     async def agent_tool(request: AgentRequest) -> Any:
@@ -110,15 +104,26 @@ class CancelRequest(BaseModel):  # type: ignore
     session_id: str
 
 
-def get_agent_app(main_agent: CodeActAgent, server_host: str, server_port: int) -> FastAPI:
+def get_agent_app(
+    agent: CodeActAgent,
+    server_host: str,
+    server_port: int,
+    event_bus: AgentEventBus,
+) -> FastAPI:
     agent_app = FastAPI(
         title="CodeArkt Agent App", description="Agent app for CodeArkt", version="1.0.0"
     )
 
     agent_cards = []
-    for agent in main_agent.get_all_agents():
+    for agent in agent.get_all_agents():
         agent_cards.append(AgentCard(name=agent.name, description=agent.description))
-        create_agent_endpoint(agent_app, agent, server_host, server_port)
+        create_agent_endpoint(
+            agent_app=agent_app,
+            agent_instance=agent,
+            server_host=server_host,
+            server_port=server_port,
+            event_bus=event_bus,
+        )
 
     async def cancel_session(request: CancelRequest) -> Dict[str, str]:
         event_bus.cancel_session(request.session_id)
@@ -132,21 +137,34 @@ def get_agent_app(main_agent: CodeActAgent, server_host: str, server_port: int) 
     return agent_app
 
 
-def get_mcp_app(mcp_config: Optional[Dict[str, Any]]) -> Optional[FastAPI]:
-    if not mcp_config:
-        return None
-    proxy = FastMCP.as_proxy(mcp_config, name="Codearkt MCP Proxy")
-    return proxy.http_app()
+def get_mcp_app(
+    mcp_config: Optional[Dict[str, Any]],
+    additional_tools: Optional[List[Callable[..., Any]]] = None,
+) -> FastAPI:
+    mcp: FastMCP[Any] = FastMCP(name="Codearkt MCP Proxy")
+    if mcp_config:
+        mcp = FastMCP.as_proxy(mcp_config, name="Codearkt MCP Proxy")
+    if additional_tools:
+        for tool in additional_tools:
+            mcp.tool(tool)
+    return mcp.http_app()
 
 
 def get_main_app(
     agent: CodeActAgent,
+    event_bus: AgentEventBus,
     mcp_config: Optional[Dict[str, Any]] = None,
     server_host: str = DEFAULT_SERVER_HOST,
     server_port: int = DEFAULT_SERVER_PORT,
+    additional_tools: Optional[List[Callable[..., Any]]] = None,
 ) -> FastAPI:
-    agent_app = get_agent_app(agent, server_host, server_port)
-    mcp_app = get_mcp_app(mcp_config) or FastAPI()
+    agent_app = get_agent_app(
+        agent=agent,
+        server_host=server_host,
+        server_port=server_port,
+        event_bus=event_bus,
+    )
+    mcp_app = get_mcp_app(mcp_config, additional_tools)
     mcp_app.mount("/agents", agent_app)
     return mcp_app
 
@@ -156,12 +174,16 @@ def run_server(
     mcp_config: Dict[str, Any],
     host: str = DEFAULT_SERVER_HOST,
     port: int = DEFAULT_SERVER_PORT,
+    additional_tools: Optional[List[Callable[..., Any]]] = None,
 ) -> None:
+    event_bus = AgentEventBus()
     app = get_main_app(
         agent=agent,
         mcp_config=mcp_config,
         server_host=host,
         server_port=port,
+        additional_tools=additional_tools,
+        event_bus=event_bus,
     )
     uvicorn.run(
         app,
@@ -173,13 +195,26 @@ def run_server(
     )
 
 
-async def run_query(
-    query: str, agent: CodeActAgent, mcp_config: Optional[Dict[str, Any]] = None
-) -> str:
+async def _start_temporary_server(
+    agent: CodeActAgent,
+    mcp_config: Optional[Dict[str, Any]] = None,
+    additional_tools: Optional[List[Callable[..., Any]]] = None,
+) -> tuple[uvicorn.Server, asyncio.Task[None], str, int]:
+    event_bus = AgentEventBus()
     host = DEFAULT_SERVER_HOST
     port = find_free_port()
-    assert port is not None
-    app = get_main_app(agent, mcp_config, server_host=host, server_port=port)
+    assert port is not None, "No free port found for temporary server"
+
+    reset_app_status()
+
+    app = get_main_app(
+        agent=agent,
+        mcp_config=mcp_config,
+        server_host=host,
+        server_port=port,
+        additional_tools=additional_tools,
+        event_bus=event_bus,
+    )
 
     config = uvicorn.Config(
         app,
@@ -191,10 +226,26 @@ async def run_query(
         ws="none",
     )
     server = uvicorn.Server(config)
-    server_task = asyncio.create_task(server.serve())
+    server_task: asyncio.Task[None] = asyncio.create_task(server.serve())
+
+    await asyncio.wait_for(_wait_until_started(server), timeout=30)
+
+    return server, server_task, host, port
+
+
+async def run_query(
+    query: str,
+    agent: CodeActAgent,
+    mcp_config: Optional[Dict[str, Any]] = None,
+    additional_tools: Optional[List[Callable[..., Any]]] = None,
+) -> str:
+    server, server_task, host, port = await _start_temporary_server(
+        agent,
+        mcp_config=mcp_config,
+        additional_tools=additional_tools,
+    )
 
     try:
-        await asyncio.wait_for(_wait_until_started(server), timeout=30)
         result = await agent.ainvoke(
             [ChatMessage(role="user", content=query)],
             session_id=get_unique_id(),
@@ -206,3 +257,40 @@ async def run_query(
         await server_task
 
     return result
+
+
+async def run_batch(
+    queries: List[str],
+    agent: CodeActAgent,
+    mcp_config: Optional[Dict[str, Any]] = None,
+    max_concurrency: int = 5,
+    additional_tools: Optional[List[Callable[..., Any]]] = None,
+) -> List[str]:
+    if not queries:
+        return []
+
+    server, server_task, host, port = await _start_temporary_server(
+        agent,
+        mcp_config=mcp_config,
+        additional_tools=additional_tools,
+    )
+
+    semaphore = asyncio.Semaphore(max_concurrency if max_concurrency > 0 else len(queries))
+
+    async def _run_single(q: str) -> str:
+        async with semaphore:
+            return await agent.ainvoke(
+                [ChatMessage(role="user", content=q)],
+                session_id=get_unique_id(),
+                server_host=host,
+                server_port=port,
+            )
+
+    try:
+        tasks = [_run_single(q) for q in queries]
+        results: List[str] = await asyncio.gather(*tasks)
+    finally:
+        server.should_exit = True
+        await server_task
+
+    return results
