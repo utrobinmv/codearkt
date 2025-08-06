@@ -23,7 +23,7 @@ AGENT_TOOL_PREFIX = "agent__"
 
 
 def extract_code_from_text(text: str) -> str | None:
-    pattern = r"[C|c]ode[\*]*:\n*```(?:py|python)?\s*\n(.*?)\n```"
+    pattern = r"[C|c]ode[\*]*\:\s*\n*```(?:py|python)?\s*\n(.*?)\n```"
     matches = re.findall(pattern, text, re.DOTALL)
     if matches:
         return "\n\n".join(match.strip() for match in matches)
@@ -63,6 +63,7 @@ class Prompts:
     final: Template
     plan: Optional[Template] = None
     plan_prefix: Optional[Template] = None
+    plan_suffix: Optional[Template] = None
     end_code_sequence: str = DEFAULT_END_CODE_SEQUENCE
     end_plan_sequence: str = DEFAULT_END_PLAN_SEQUENCE
     stop_sequences: List[str] = field(default_factory=lambda: DEFAULT_STOP_SEQUENCES)
@@ -378,6 +379,9 @@ class CodeActAgent:
         assert (
             self.prompts.plan_prefix is not None
         ), "Plan prefix is not set, but planning is enabled"
+        assert (
+            self.prompts.plan_suffix is not None
+        ), "Plan suffix is not set, but planning is enabled"
 
         conversation = "\n\n".join([f"{m.role}: {m.content}" for m in messages[1:]])
         planning_prompt = self.prompts.plan.render(conversation=conversation, tools=tools)
@@ -394,7 +398,10 @@ class CodeActAgent:
             chunk = event.content
             output_text += chunk
             await self._publish_event(event_bus, session_id, EventType.OUTPUT, chunk)
-        await self._publish_event(event_bus, session_id, EventType.OUTPUT, "\n\n")
+
+        plan_suffix = "\n\n" + self.prompts.plan_suffix.render().strip()
+        await self._publish_event(event_bus, session_id, EventType.OUTPUT, plan_suffix)
+        output_text += plan_suffix
 
         return [ChatMessage(role="assistant", content=output_text)]
 

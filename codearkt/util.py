@@ -1,5 +1,6 @@
 import uuid
 import socket
+import random
 from typing import Optional
 
 
@@ -8,7 +9,9 @@ def get_unique_id() -> str:
 
 
 def find_free_port() -> Optional[int]:
-    for port in range(5000, 6001):
+    ports = list(range(5000, 6001))
+    random.shuffle(ports)
+    for port in ports:
         try:
             with socket.socket() as s:
                 s.bind(("", port))

@@ -101,14 +101,14 @@ plan: |
 
   First, build a survey of facts known or needed to solve the task.
   Provide fact survey using exactly this structure:
-  ---
+
   1. Facts given in the task
   What we know from task description
   2. Facts to look up
   What to look up + sources
   3. Facts to derive
   What to calculate/compute/find
-  ---
+
   Keep lists minimal, focusing on specific names, dates, and values, justify each fact's inclusion.
 
   Then write a concise plan that:
@@ -131,3 +131,6 @@ plan: |
 
 plan_prefix: |
   Here are the facts I know and the plan of action that I will follow to solve the task:
+
+plan_suffix: |
+  Now I will execute the plan and provide the final answer after all steps are completed.
