@@ -6,6 +6,7 @@ import atexit
 import signal
 import json
 from typing import Optional, Any, List, Dict, Sequence
+import threading
 
 import docker
 from docker.models.containers import Container
@@ -18,7 +19,7 @@ from codearkt.tools import fetch_tools
 from codearkt.util import get_unique_id
 
 
-IMAGE: str = "phoenix120/codearkt_http:v1"
+IMAGE: str = "phoenix120/codearkt_http:v2"
 MEM_LIMIT: str = "512m"
 CPU_QUOTA: int = 50000
 CPU_PERIOD: int = 100000
@@ -30,16 +31,18 @@ CONTAINER_NAME: str = "codearkt_http"
 
 _CLIENT: Optional[DockerClient] = None
 _CONTAINER: Optional[Container] = None
+_DOCKER_LOCK: threading.Lock = threading.Lock()
 
 
 def cleanup_container(signum: Optional[Any] = None, frame: Optional[Any] = None) -> None:
     global _CONTAINER
-    if _CONTAINER:
-        try:
-            _CONTAINER.remove(force=True)
-            _CONTAINER = None
-        except Exception:
-            pass
+    with _DOCKER_LOCK:
+        if _CONTAINER:
+            try:
+                _CONTAINER.remove(force=True)
+                _CONTAINER = None
+            except Exception:
+                pass
     if signum == signal.SIGINT:
         raise KeyboardInterrupt()
 
@@ -87,7 +90,7 @@ class ExecResult(BaseModel):  # type: ignore
                     image_content = [
                         {
                             "type": "image_url",
-                            "image_url": {"url": f"data:image/jpeg;base64,{image_base64}"},
+                            "image_url": {"url": f"data:image/png;base64,{image_base64}"},
                         }
                     ]
             except json.JSONDecodeError:
@@ -176,18 +179,19 @@ class PythonExecutor:
     ) -> None:
         global _CLIENT, _CONTAINER
 
-        if not _CLIENT:
-            _CLIENT = init_docker()
-        client = _CLIENT
+        with _DOCKER_LOCK:
+            if not _CLIENT:
+                _CLIENT = init_docker()
+            client = _CLIENT
 
-        if not _CONTAINER:
-            try:
-                _CONTAINER = _CLIENT.containers.get(CONTAINER_NAME)
-            except docker.errors.NotFound:
-                net = run_network(client)
-                _CONTAINER = run_container(client, str(net.name))
+            if not _CONTAINER:
+                try:
+                    _CONTAINER = client.containers.get(CONTAINER_NAME)
+                except docker.errors.NotFound:
+                    net = run_network(client)
+                    _CONTAINER = run_container(client, str(net.name))
 
-        self.container = _CONTAINER
+            self.container = _CONTAINER
         self.tools_server_host = tools_server_host
         self.tools_server_port = tools_server_port
         self.session_id = session_id

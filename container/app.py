@@ -156,7 +156,28 @@ class Worker:
 
     def terminate(self) -> None:
         self._request_q.put(None)
-        self._process.join(timeout=1)
+        if self._process.is_alive():
+            try:
+                self._process.terminate()
+            except Exception:
+                pass
+            self._process.join(timeout=2)
+
+        if self._process.is_alive():
+            try:
+                self._process.kill()
+            except Exception:
+                pass
+            self._process.join(timeout=1)
+
+        try:
+            self._request_q.close()
+        except Exception:
+            pass
+        try:
+            self._response_q.close()
+        except Exception:
+            pass
 
 
 def _get_worker(interpreter_id: str) -> Worker:
@@ -188,4 +209,5 @@ async def cleanup(payload: CleanupPayload) -> Dict[str, str]:
     interpreter_id = payload.interpreter_id
     worker = _get_worker(interpreter_id)
     worker.terminate()
+    WORKERS.pop(interpreter_id, None)
     return {"status": "ok"}

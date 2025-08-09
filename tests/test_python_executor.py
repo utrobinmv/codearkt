@@ -50,9 +50,7 @@ class TestPythonExecutor:
         result = await python_executor.invoke("r = {'a': 4}\nr")
         assert result.result == {"a": 4}
 
-    async def test_python_executor_mcp_invokation_no_tools(
-        self, mcp_server_test: MCPServerTest
-    ) -> None:
+    async def test_python_executor_mcp_call_no_tools(self, mcp_server_test: MCPServerTest) -> None:
         _ = mcp_server_test
         python_executor = PythonExecutor(
             tools_server_host=mcp_server_test.host,
@@ -66,7 +64,7 @@ class TestPythonExecutor:
         assert result.error
         assert "Error" in result.error
 
-    async def test_python_executor_mcp_invokation_tool(
+    async def test_python_executor_mcp_call_tool(
         self,
         mcp_server_test: MCPServerTest,
     ) -> None:

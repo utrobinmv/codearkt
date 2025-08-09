@@ -10,6 +10,8 @@ from openai.types.chat.chat_completion_chunk import ChatCompletionChunk, ChoiceD
 load_dotenv()
 BASE_URL = os.getenv("BASE_URL", "https://openrouter.ai/api/v1")
 API_KEY = os.getenv("OPENROUTER_API_KEY", "")
+HTTP_REFERRER = os.getenv("HTTP_REFERRER", "https://github.com/IlyaGusev/codearkt/")
+X_TITLE = os.getenv("X_TITLE", "CodeArkt")
 
 
 class FunctionCall(BaseModel):  # type: ignore
@@ -79,6 +81,10 @@ class LLM:
                 messages=casted_messages,
                 stream=True,
                 tool_choice="none",
+                extra_headers={
+                    "HTTP-Referer": HTTP_REFERRER,
+                    "X-Title": X_TITLE,
+                },
                 **api_params,
             )
             async for event in stream:

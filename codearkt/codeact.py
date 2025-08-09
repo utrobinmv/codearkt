@@ -23,7 +23,7 @@ AGENT_TOOL_PREFIX = "agent__"
 
 
 def extract_code_from_text(text: str) -> str | None:
-    pattern = r"[C|c]ode[\*]*\:\s*\n*```(?:py|python)?\s*\n(.*?)\n```"
+    pattern = r"[Cc]ode[\*]*\:\s*\n*```(?:py|python)?\s*\n(.*?)\n```"
     matches = re.findall(pattern, text, re.DOTALL)
     if matches:
         return "\n\n".join(match.strip() for match in matches)
@@ -149,6 +149,7 @@ class CodeActAgent:
         await self._publish_event(event_bus, session_id, EventType.AGENT_START)
         self._log(f"Starting agent {self.name}", run_id=run_id, session_id=session_id)
 
+        python_executor = None
         try:
             python_executor = PythonExecutor(
                 session_id=session_id,
@@ -227,7 +228,8 @@ class CodeActAgent:
             raise e
         finally:
             # Cleanup
-            await python_executor.cleanup()
+            if python_executor:
+                await python_executor.cleanup()
             await self._publish_event(event_bus, session_id, EventType.AGENT_END)
 
         self._log(f"Agent {self.name} completed successfully", run_id=run_id, session_id=session_id)

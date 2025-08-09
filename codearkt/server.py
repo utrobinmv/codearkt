@@ -84,7 +84,7 @@ def create_agent_endpoint(
 
             return StreamingResponse(
                 stream_response(),
-                media_type="text/event-stream",
+                media_type="application/json",
                 headers=AGENT_RESPONSE_HEADERS,
             )
         else:
@@ -115,11 +115,11 @@ def get_agent_app(
     )
 
     agent_cards = []
-    for agent in agent.get_all_agents():
-        agent_cards.append(AgentCard(name=agent.name, description=agent.description))
+    for sub_agent in agent.get_all_agents():
+        agent_cards.append(AgentCard(name=sub_agent.name, description=sub_agent.description))
         create_agent_endpoint(
             agent_app=agent_app,
-            agent_instance=agent,
+            agent_instance=sub_agent,
             server_host=server_host,
             server_port=server_port,
             event_bus=event_bus,
