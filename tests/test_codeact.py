@@ -53,6 +53,11 @@ class TestExtractCodeFromText:
         code = extract_code_from_text(dedent(text))
         assert code is not None, code
 
+    def test_extract_code_markdown(self) -> None:
+        text = '**Code:**\n```py\nprint("Hello, world!")\n```'
+        code = extract_code_from_text(dedent(text))
+        assert code is not None, code
+
 
 class TestCodeActAgent:
     async def test_codeact_no_tools(self, deepseek: LLM) -> None:

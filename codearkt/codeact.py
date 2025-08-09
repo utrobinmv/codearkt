@@ -23,7 +23,7 @@ AGENT_TOOL_PREFIX = "agent__"
 
 
 def extract_code_from_text(text: str) -> str | None:
-    pattern = r"[Cc]ode[\*]*\:\s*\n*```(?:py|python)?\s*\n(.*?)\n```"
+    pattern = r"[Cc]ode[\*]*\:[\*]*\s*\n*```(?:py|python)?\s*\n(.*?)\n```"
     matches = re.findall(pattern, text, re.DOTALL)
     if matches:
         return "\n\n".join(match.strip() for match in matches)
