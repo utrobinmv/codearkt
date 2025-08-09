@@ -4,7 +4,7 @@ from typing import Iterator, List, Dict, Any
 import gradio as gr
 
 from codearkt.event_bus import AgentEvent, EventType
-from codearkt.llm import ChatMessage, ToolCall, FunctionCall
+from codearkt.llm import ChatMessage
 from codearkt.util import get_unique_id
 
 HEADERS = {"Content-Type": "application/json", "Accept": "text/event-stream"}
@@ -39,21 +39,6 @@ def stop_agent(session_id: str) -> None:
         pass
 
 
-def clean_real_messages(messages: List[ChatMessage]) -> List[ChatMessage]:
-    prev_message = None
-    for message in messages:
-        if message.role == "assistant" and message.tool_calls:
-            code = message.tool_calls[0].function.arguments
-            if (
-                prev_message
-                and prev_message.role == "assistant"
-                and isinstance(prev_message.content, str)
-            ):
-                prev_message.content = prev_message.content.replace(code, "")
-        prev_message = message
-    return messages
-
-
 def bot(
     message: str,
     history: List[Dict[str, Any]],
@@ -62,7 +47,6 @@ def bot(
 ) -> Iterator[tuple[List[Dict[str, Any]], str | None, List[ChatMessage]]]:
     history = []
     session_id = session_id or get_unique_id()
-    real_messages = clean_real_messages(real_messages)
     real_messages.append(ChatMessage(role="user", content=message))
     events = query_manager_agent(real_messages, session_id=session_id)
     agent_names: List[str] = []
@@ -77,12 +61,7 @@ def bot(
         if event.event_type == EventType.TOOL_RESPONSE:
             assert event.content
             if is_root_agent:
-                assert real_messages[-1].tool_calls
-                tool_call_id = real_messages[-1].tool_calls[0].id
-                assert tool_call_id
-                real_messages.append(
-                    ChatMessage(role="tool", content=event.content, tool_call_id=tool_call_id)
-                )
+                real_messages.append(ChatMessage(role="user", content=event.content))
             history.append(
                 {
                     "role": "assistant",
@@ -107,26 +86,7 @@ def bot(
                     "content": f"\n**Agent {event.agent_name} completed the task!**\n\n",
                 }
             )
-        elif event.event_type == EventType.TOOL_CALL:
-            assert event.content
-            tool_call_id = get_unique_id()
-            if is_root_agent:
-                real_messages.append(
-                    ChatMessage(
-                        role="assistant",
-                        content="",
-                        tool_calls=[
-                            ToolCall(
-                                id=tool_call_id,
-                                function=FunctionCall(
-                                    name="python_interpreter", arguments=event.content
-                                ),
-                            )
-                        ],
-                    )
-                )
-        else:
-            assert event.event_type == EventType.OUTPUT
+        elif event.event_type == EventType.OUTPUT:
             if prev_message_title == CODE_TITLE:
                 history.append({"role": "assistant", "content": ""})
 

@@ -13,7 +13,7 @@ from jinja2 import Template
 from codearkt.python_executor import PythonExecutor
 from codearkt.tools import fetch_tools
 from codearkt.event_bus import AgentEventBus, EventType
-from codearkt.llm import LLM, ChatMessages, ChatMessage, FunctionCall, ToolCall
+from codearkt.llm import LLM, ChatMessages, ChatMessage
 from codearkt.util import get_unique_id
 
 DEFAULT_END_CODE_SEQUENCE = "<end_code>"
@@ -297,16 +297,9 @@ class CodeActAgent:
         self._log(
             f"Code action: {code_action}", run_id=run_id, session_id=session_id, level=logging.DEBUG
         )
-        tool_call_id = f"toolu_{get_unique_id()}"
         tool_call_message = ChatMessage(
             role="assistant",
             content=output_text,
-            tool_calls=[
-                ToolCall(
-                    id=tool_call_id,
-                    function=FunctionCall(name="python_interpreter", arguments=code_action),
-                )
-            ],
         )
         await self._publish_event(event_bus, session_id, EventType.TOOL_CALL, code_action)
         new_messages.append(tool_call_message)
@@ -320,14 +313,13 @@ class CodeActAgent:
                 session_id=session_id,
                 level=logging.DEBUG,
             )
-            code_result_messages = code_result.to_messages(tool_call_id)
-            new_messages.extend(code_result_messages)
-            tool_output: str = str(code_result_messages[0].content) + "\n"
+            code_result_message: ChatMessage = code_result.to_message()
+            assert isinstance(code_result_message.content, list)
+            new_messages.append(code_result_message)
+            tool_output: str = str(code_result_message.content[0]["text"]) + "\n"
             await self._publish_event(event_bus, session_id, EventType.TOOL_RESPONSE, tool_output)
         except Exception as e:
-            new_messages.append(
-                ChatMessage(role="tool", content=f"Error: {e}", tool_call_id=tool_call_id)
-            )
+            new_messages.append(ChatMessage(role="user", content=f"Error: {e}"))
             self._log(f"Code error: {e}", run_id=run_id, session_id=session_id, level=logging.DEBUG)
             await self._publish_event(
                 event_bus, session_id, EventType.TOOL_RESPONSE, f"Error: {e}\n"
@@ -401,7 +393,7 @@ class CodeActAgent:
             output_text += chunk
             await self._publish_event(event_bus, session_id, EventType.OUTPUT, chunk)
 
-        plan_suffix = "\n\n" + self.prompts.plan_suffix.render().strip()
+        plan_suffix = "\n\n" + self.prompts.plan_suffix.render().strip() + "\n\n"
         await self._publish_event(event_bus, session_id, EventType.OUTPUT, plan_suffix)
         output_text += plan_suffix
 

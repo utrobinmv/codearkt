@@ -79,7 +79,7 @@ class ExecResult(BaseModel):  # type: ignore
     error: str | None = None
     result: Any | None = None
 
-    def to_messages(self, tool_call_id: str) -> List[ChatMessage]:
+    def to_message(self) -> ChatMessage:
         image_content: List[Dict[str, Any]] | None = None
         output: str = "Stdout:\n" + self.stdout + "\n\n"
         if self.result is not None:
@@ -101,11 +101,12 @@ class ExecResult(BaseModel):  # type: ignore
             output += "Error: " + self.error
         output = output.strip()
 
-        messages = []
-        messages.append(ChatMessage(role="tool", content=output, tool_call_id=tool_call_id))
+        content = []
+        if output:
+            content.append({"type": "text", "text": output})
         if image_content:
-            messages.append(ChatMessage(role="user", content=image_content))
-        return messages
+            content += image_content
+        return ChatMessage(role="user", content=content)
 
 
 def init_docker() -> docker.DockerClient:
