@@ -126,7 +126,9 @@ class TestCodeActAgent:
         )
         assert "role-playing language models" not in str(result).lower(), result
 
-    async def test_codeact_images(self, gpt_4o: LLM, mcp_server_test: MCPServerTest) -> None:
+    async def test_codeact_images(
+        self, gpt_4o: LLM, mcp_server_test: MCPServerTest, test_image_url: str
+    ) -> None:
         _ = mcp_server_test
         agent = CodeActAgent(
             name="agent",
@@ -134,12 +136,11 @@ class TestCodeActAgent:
             llm=gpt_4o,
             tool_names=["show_image"],
         )
-        image_url = "https://arxiv.org/html/2409.06820v4/extracted/6347978/pingpong_v3.drawio.png"
         result = await agent.ainvoke(
             [
                 ChatMessage(
                     role="user",
-                    content=f"What blocks are in this image? {image_url}\nUse show_image tool",
+                    content=f"What blocks are in this image? {test_image_url}\nUse show_image tool",
                 )
             ],
             session_id=get_unique_id(),

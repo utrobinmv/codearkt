@@ -1,8 +1,9 @@
 import pytest
+import json
 
-from codearkt.python_executor import PythonExecutor
+from codearkt.python_executor import PythonExecutor, ExecResult
 
-from tests.conftest import MCPServerTest
+from tests.conftest import MCPServerTest, show_image
 
 SNIPPET_1 = """
 answer = "Answer 1"
@@ -84,3 +85,19 @@ class TestPythonExecutor:
         executor = PythonExecutor(tool_names=["arxiv_download"])
         with pytest.raises(ValueError):
             await executor.invoke(SNIPPET_3)
+
+
+def test_execresult_to_message_with_text_result() -> None:
+    r = ExecResult(stdout="hello", error=None, result={"a": 1})
+    msg = r.to_message()
+    assert msg.role == "user"
+    assert isinstance(msg.content, list)
+    text_parts = [c for c in msg.content if c.get("type") == "text"]
+    assert text_parts and "Stdout:" in text_parts[0]["text"]
+
+
+def test_execresult_to_message_with_image(test_image_url: str) -> None:
+    r = ExecResult(stdout="", error=None, result=json.dumps(show_image(test_image_url)))
+    msg = r.to_message()
+    assert isinstance(msg.content, list)
+    assert any(c.get("type") == "image_url" for c in msg.content)

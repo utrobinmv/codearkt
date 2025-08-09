@@ -16,7 +16,7 @@ from pydantic import BaseModel
 
 from codearkt.llm import ChatMessage
 from codearkt.tools import fetch_tools
-from codearkt.util import get_unique_id
+from codearkt.util import get_unique_id, truncate_content, is_correct_json
 
 
 IMAGE: str = "phoenix120/codearkt_http:v2"
@@ -50,28 +50,6 @@ def cleanup_container(signum: Optional[Any] = None, frame: Optional[Any] = None)
 atexit.register(cleanup_container)
 signal.signal(signal.SIGINT, cleanup_container)
 signal.signal(signal.SIGTERM, cleanup_container)
-
-
-MAX_LENGTH_TRUNCATE_CONTENT: int = 20000
-
-
-def truncate_content(content: str, max_length: int = MAX_LENGTH_TRUNCATE_CONTENT) -> str:
-    if len(content) <= max_length:
-        return content
-    else:
-        return (
-            content[: max_length // 2]
-            + f"\n..._This content has been truncated to stay below {max_length} characters_...\n"
-            + content[-max_length // 2 :]
-        )
-
-
-def is_correct_json(content: str) -> bool:
-    try:
-        json.loads(content)
-        return True
-    except json.JSONDecodeError:
-        return False
 
 
 class ExecResult(BaseModel):  # type: ignore

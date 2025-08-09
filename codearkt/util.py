@@ -1,7 +1,10 @@
 import uuid
+import json
 import socket
 import random
 from typing import Optional
+
+MAX_LENGTH_TRUNCATE_CONTENT: int = 20000
 
 
 def get_unique_id() -> str:
@@ -19,3 +22,22 @@ def find_free_port() -> Optional[int]:
         except Exception:
             continue
     return None
+
+
+def truncate_content(content: str, max_length: int = MAX_LENGTH_TRUNCATE_CONTENT) -> str:
+    if len(content) <= max_length:
+        return content
+    else:
+        return (
+            content[: max_length // 2]
+            + f"\n..._This content has been truncated to stay below {max_length} characters_...\n"
+            + content[-max_length // 2 :]
+        )
+
+
+def is_correct_json(content: str) -> bool:
+    try:
+        json.loads(content)
+        return True
+    except json.JSONDecodeError:
+        return False
