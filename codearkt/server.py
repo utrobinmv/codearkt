@@ -139,14 +139,14 @@ def get_agent_app(
 
 def get_mcp_app(
     mcp_config: Optional[Dict[str, Any]],
-    additional_tools: Optional[List[Callable[..., Any]]] = None,
+    additional_tools: Optional[Dict[str, Callable[..., Any]]] = None,
 ) -> FastAPI:
     mcp: FastMCP[Any] = FastMCP(name="Codearkt MCP Proxy")
     if mcp_config:
         mcp = FastMCP.as_proxy(mcp_config, name="Codearkt MCP Proxy")
     if additional_tools:
-        for tool in additional_tools:
-            mcp.tool(tool)
+        for name, tool in additional_tools.items():
+            mcp.tool(tool, name=name)
     return mcp.http_app()
 
 
@@ -156,7 +156,7 @@ def get_main_app(
     mcp_config: Optional[Dict[str, Any]] = None,
     server_host: str = DEFAULT_SERVER_HOST,
     server_port: int = DEFAULT_SERVER_PORT,
-    additional_tools: Optional[List[Callable[..., Any]]] = None,
+    additional_tools: Optional[Dict[str, Callable[..., Any]]] = None,
 ) -> FastAPI:
     agent_app = get_agent_app(
         agent=agent,
@@ -174,7 +174,7 @@ def run_server(
     mcp_config: Dict[str, Any],
     host: str = DEFAULT_SERVER_HOST,
     port: int = DEFAULT_SERVER_PORT,
-    additional_tools: Optional[List[Callable[..., Any]]] = None,
+    additional_tools: Optional[Dict[str, Callable[..., Any]]] = None,
 ) -> None:
     event_bus = AgentEventBus()
     app = get_main_app(
@@ -198,7 +198,7 @@ def run_server(
 async def _start_temporary_server(
     agent: CodeActAgent,
     mcp_config: Optional[Dict[str, Any]] = None,
-    additional_tools: Optional[List[Callable[..., Any]]] = None,
+    additional_tools: Optional[Dict[str, Callable[..., Any]]] = None,
 ) -> tuple[uvicorn.Server, asyncio.Task[None], str, int]:
     event_bus = AgentEventBus()
     host = DEFAULT_SERVER_HOST
@@ -237,7 +237,7 @@ async def run_query(
     query: str,
     agent: CodeActAgent,
     mcp_config: Optional[Dict[str, Any]] = None,
-    additional_tools: Optional[List[Callable[..., Any]]] = None,
+    additional_tools: Optional[Dict[str, Callable[..., Any]]] = None,
 ) -> str:
     server, server_task, host, port = await _start_temporary_server(
         agent,
@@ -264,7 +264,7 @@ async def run_batch(
     agent: CodeActAgent,
     mcp_config: Optional[Dict[str, Any]] = None,
     max_concurrency: int = 5,
-    additional_tools: Optional[List[Callable[..., Any]]] = None,
+    additional_tools: Optional[Dict[str, Callable[..., Any]]] = None,
 ) -> List[str]:
     if not queries:
         return []

@@ -250,10 +250,13 @@ class TestCodeActAgent:
             name=agent_name,
             description="Just agent",
             llm=deepseek,
-            tool_names=["arxiv_search"],
+            tool_names=["arxiv_search_1"],
         )
         result = await run_query(
-            "Get the exact title of 2409.06820v4.", agent, {}, additional_tools=[arxiv_search]
+            "Get the exact title of 2409.06820v4.",
+            agent,
+            {},
+            additional_tools={"arxiv_search_1": arxiv_search},
         )
         assert "role-playing language models" in str(result).lower(), result
 
@@ -269,7 +272,7 @@ class TestCodeActAgent:
             ["What is 432412421249 * 4332144219?", "Get the exact title of 2409.06820v4."],
             agent,
             {},
-            additional_tools=[arxiv_search],
+            additional_tools={"arxiv_search": arxiv_search},
         )
         assert len(results) == 2, results
         result1 = str(results[0]).replace(",", "").replace(".", "").replace(" ", "")
