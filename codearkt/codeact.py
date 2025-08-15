@@ -2,6 +2,7 @@ import re
 import copy
 import logging
 from pathlib import Path
+from textwrap import dedent
 from dataclasses import dataclass, field
 from typing import List, Self, Dict, Any, Optional, Sequence, get_args
 
@@ -245,6 +246,9 @@ class CodeActAgent:
         if server_host and server_port:
             server_url = f"{server_host}:{server_port}"
             tools = await fetch_tools(server_url)
+            for tool in tools:
+                if tool.description:
+                    tool.description = dedent(tool.description).strip()
             tools = [tool for tool in tools if tool.name in self.tool_names]
             fetched_tool_names = [tool.name for tool in tools]
 

@@ -279,3 +279,18 @@ class TestCodeActAgent:
         assert "1873272970937648109531" in result1, result1
         result2 = str(results[1]).lower()
         assert "role-playing language models" in result2, result2
+
+    async def test_codeact_tool_description_dedent(
+        self, deepseek: LLM, mcp_server_test: MCPServerTest
+    ) -> None:
+        agent = CodeActAgent(
+            name="agent",
+            description="Just agent",
+            llm=deepseek,
+            tool_names=["arxiv_search"],
+        )
+        tools = await agent._get_tools(
+            server_host=mcp_server_test.host, server_port=mcp_server_test.port
+        )
+        assert tools[0].description is not None, tools[0].description
+        assert tools[0].description.strip() == tools[0].description

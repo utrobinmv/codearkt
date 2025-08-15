@@ -22,7 +22,6 @@ system: |
   - Use only defined variables.
   - Avoid duplicate tool calls with the same parameters.
   - Don't name variables after tools.
-  - Import only from authorized modules: {{authorized_imports}}.
   - State persists between executions.
 
   ## Example of using (notional) tools:
