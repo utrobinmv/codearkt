@@ -62,6 +62,7 @@ def convert_code_to_content(
 class Prompts:
     system: Template
     final: Template
+    no_code_action: Template
     plan: Optional[Template] = None
     plan_prefix: Optional[Template] = None
     plan_suffix: Optional[Template] = None
@@ -85,7 +86,9 @@ class Prompts:
                 wrapped_templates[key] = value.strip()
             else:
                 wrapped_templates[key] = value
-        return cls(**wrapped_templates)
+        obj = cls(**wrapped_templates)
+        obj.stop_sequences = [s.strip() for s in obj.stop_sequences]
+        return obj
 
     @classmethod
     def default(cls) -> Self:
@@ -296,6 +299,17 @@ class CodeActAgent:
         new_messages = []
         if code_action is None:
             new_messages.append(ChatMessage(role="assistant", content=output_text))
+            if self._is_final_answer(output_text):
+                return new_messages
+            assert self.prompts.no_code_action is not None
+            no_code_action_prompt = self.prompts.no_code_action.render()
+            new_messages.append(ChatMessage(role="user", content=no_code_action_prompt))
+            self._log(
+                no_code_action_prompt,
+                run_id=run_id,
+                session_id=session_id,
+                level=logging.DEBUG,
+            )
             return new_messages
 
         self._log(
@@ -329,6 +343,12 @@ class CodeActAgent:
                 event_bus, session_id, EventType.TOOL_RESPONSE, f"Error: {e}\n"
             )
         return new_messages
+
+    def _is_final_answer(self, content: str) -> bool:
+        code_action = extract_code_from_text(content)
+        assert code_action is None
+        content = content.lower()
+        return "final" in content and "answer" in content
 
     async def _handle_final_message(
         self,
