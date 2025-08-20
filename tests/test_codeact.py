@@ -1,5 +1,6 @@
 import asyncio
 from textwrap import dedent
+from datetime import datetime
 
 from academia_mcp.tools import arxiv_search
 
@@ -294,3 +295,16 @@ class TestCodeActAgent:
         )
         assert tools[0].description is not None, tools[0].description
         assert tools[0].description.strip() == tools[0].description
+
+    async def test_codeact_current_date(self, deepseek: LLM) -> None:
+        agent = CodeActAgent(
+            name="agent",
+            description="Just agent",
+            llm=deepseek,
+        )
+        result = await agent.ainvoke(
+            [ChatMessage(role="user", content="What is the current date? Use %Y-%m-%d format")],
+            session_id=get_unique_id(),
+        )
+        current_date = datetime.now().strftime("%Y-%m-%d")
+        assert current_date in str(result), result

@@ -247,11 +247,14 @@ class PythonExecutor:
         payload = {
             "interpreter_id": self.interpreter_id,
         }
-        async with httpx.AsyncClient(limits=httpx.Limits(keepalive_expiry=0)) as client:
-            response = await client.post(
-                f"{self.url}/cleanup", json=payload, timeout=CLEANUP_TIMEOUT
-            )
-            response.raise_for_status()
+        try:
+            async with httpx.AsyncClient(limits=httpx.Limits(keepalive_expiry=0)) as client:
+                response = await client.post(
+                    f"{self.url}/cleanup", json=payload, timeout=CLEANUP_TIMEOUT
+                )
+                response.raise_for_status()
+        except Exception:
+            pass
 
     async def _wait_for_ready(self, max_wait: int = 60) -> None:
         start_time = time.time()
