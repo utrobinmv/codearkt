@@ -119,6 +119,8 @@ final: |
   Do not call any tools.
 
 plan: |
+  Current date: {{current_date}}
+  
   Given a conversation between a user and an agent:
   ```
   {{conversation}}

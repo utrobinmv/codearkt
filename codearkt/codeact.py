@@ -176,9 +176,8 @@ class CodeActAgent:
                 run_id=run_id,
                 session_id=session_id,
             )
-            system_prompt = self.prompts.system.render(
-                tools=tools, current_date=datetime.now().strftime("%Y-%m-%d")
-            )
+            current_date = datetime.now().strftime("%Y-%m-%d")
+            system_prompt = self.prompts.system.render(tools=tools, current_date=current_date)
 
             # Form input messages
             messages = convert_code_to_content(
@@ -405,7 +404,10 @@ class CodeActAgent:
         ), "Plan suffix is not set, but planning is enabled"
 
         conversation = "\n\n".join([f"{m.role}: {m.content}" for m in messages[1:]])
-        planning_prompt = self.prompts.plan.render(conversation=conversation, tools=tools)
+        current_date = datetime.now().strftime("%Y-%m-%d")
+        planning_prompt = self.prompts.plan.render(
+            conversation=conversation, tools=tools, current_date=current_date
+        )
         input_messages = [ChatMessage(role="user", content=planning_prompt)]
 
         output_stream = self.llm.astream(input_messages, stop=[self.prompts.end_plan_sequence])
