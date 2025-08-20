@@ -3,6 +3,7 @@ import copy
 import logging
 from pathlib import Path
 from textwrap import dedent
+from datetime import datetime
 from dataclasses import dataclass, field
 from typing import List, Self, Dict, Any, Optional, Sequence, get_args
 
@@ -175,7 +176,9 @@ class CodeActAgent:
                 run_id=run_id,
                 session_id=session_id,
             )
-            system_prompt = self.prompts.system.render(tools=tools)
+            system_prompt = self.prompts.system.render(
+                tools=tools, current_date=datetime.now().strftime("%Y-%m-%d")
+            )
 
             # Form input messages
             messages = convert_code_to_content(
