@@ -23,7 +23,7 @@ IMAGE: str = "phoenix120/codearkt_http:v2"
 MEM_LIMIT: str = "512m"
 CPU_QUOTA: int = 50000
 CPU_PERIOD: int = 100000
-EXEC_TIMEOUT: int = 600
+EXEC_TIMEOUT: int = 24 * 60 * 60  # 24 hours
 CLEANUP_TIMEOUT: int = 30
 PIDS_LIMIT: int = 64
 NET_NAME: str = "sandbox_net"
@@ -220,8 +220,6 @@ class PythonExecutor:
         }
 
         async with httpx.AsyncClient(limits=httpx.Limits(keepalive_expiry=0)) as client:
-            # TODO: cancel internal requests after timeout
-            # TODO: proper error for timeout
             resp = await client.post(f"{self.url}/exec", json=payload, timeout=EXEC_TIMEOUT)
             resp.raise_for_status()
             out = resp.json()

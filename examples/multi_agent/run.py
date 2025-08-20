@@ -16,15 +16,8 @@ current_dir = Path(__file__).parent
 
 PHOENIX_URL = os.getenv("PHOENIX_URL", "http://localhost:6006")
 PHOENIX_PROJECT_NAME = os.getenv("PHOENIX_PROJECT_NAME", "codearkt")
-EXA_API_KEY = os.getenv("EXA_API_KEY", "")
 MCP_CONFIG = {
-    "mcpServers": {
-        "academia": {"url": "http://0.0.0.0:5056/mcp", "transport": "streamable-http"},
-        "exa": {
-            "url": f"https://mcp.exa.ai/mcp?exaApiKey={EXA_API_KEY}",
-            "transport": "streamable-http",
-        },
-    }
+    "mcpServers": {"academia": {"url": "http://0.0.0.0:5056/mcp", "transport": "streamable-http"}}
 }
 
 LIBRARIAN_DESCRIPTION = """This team member runs gets and analyzes information from papers.
@@ -42,10 +35,10 @@ def get_librarian() -> CodeActAgent:
         llm=llm,
         prompts=prompts,
         tool_names=[
-            "academia_arxiv_download",
-            "academia_arxiv_search",
-            "exa_web_search_exa",
-            "exa_crawling_exa",
+            "arxiv_download",
+            "arxiv_search",
+            "web_search",
+            "visit_webpage",
         ],
         planning_interval=5,
         verbosity_level=logging.INFO,

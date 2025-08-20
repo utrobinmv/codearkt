@@ -1,4 +1,6 @@
 import httpx
+import tempfile
+import os
 from typing import Iterator, List, Dict, Any
 
 import gradio as gr
@@ -115,6 +117,25 @@ class GradioUI:
                 additional_inputs=[session_id_state, real_messages_state],
                 additional_outputs=[session_id_state, real_messages_state],
                 save_history=True,
+            )
+
+            download_button = gr.DownloadButton(
+                label="💾 Download conversation",
+                variant="secondary",
+            )
+
+            def _download_conversation(real_messages: List[ChatMessage]) -> str:
+                lines = [f"{msg.role}: {msg.content}" for msg in real_messages]
+                text = "\n\n".join(lines)
+
+                fd, path = tempfile.mkstemp(prefix="conversation_", suffix=".txt")
+                with os.fdopen(fd, "w", encoding="utf-8") as f:
+                    f.write(text)
+
+                return path
+
+            download_button.click(
+                _download_conversation, inputs=[real_messages_state], outputs=download_button
             )
 
             def _on_stop(session_id: str | None) -> str | None:
