@@ -7,7 +7,7 @@ class TestLLM:
             model_name="test-model", temperature=0.25, top_p=0.3, max_tokens=1024, stop=["STOP"]
         )
 
-        assert llm.model_name == "test-model"
+        assert llm._model_name == "test-model"
         assert llm.params["temperature"] == 0.25
         assert llm.params["top_p"] == 0.3
         assert llm.params["max_tokens"] == 1024

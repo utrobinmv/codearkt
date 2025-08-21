@@ -1,5 +1,5 @@
 import os
-from typing import Dict, Any, List, cast, AsyncGenerator, Optional
+from typing import Dict, Any, List, cast, AsyncGenerator, Optional, Literal
 
 from dotenv import load_dotenv
 from pydantic import BaseModel
@@ -50,9 +50,11 @@ class LLM:
         top_p: float = 0.9,
         max_tokens: int = 8192,
         stop: Optional[List[str]] = None,
+        tool_choice: Literal["none", "auto"] = "none",
         **kwargs: Any,
     ) -> None:
-        self.model_name = model_name
+        self._model_name = model_name
+        self._tool_choice: Literal["none", "auto"] = tool_choice
         self._base_url = base_url
         self._api_key = api_key
         self.params = {
@@ -68,7 +70,7 @@ class LLM:
     async def astream(
         self, messages: ChatMessages, **kwargs: Any
     ) -> AsyncGenerator[ChoiceDelta, None]:
-        if "gpt-5" in self.model_name:
+        if "gpt-5" in self._model_name:
             if messages[0].role == "system":
                 messages[0].role = "developer"
 
@@ -81,10 +83,10 @@ class LLM:
 
         async with AsyncOpenAI(base_url=self._base_url, api_key=self._api_key) as api:
             stream: AsyncStream[ChatCompletionChunk] = await api.chat.completions.create(
-                model=self.model_name,
+                model=self._model_name,
                 messages=casted_messages,
                 stream=True,
-                tool_choice="none",
+                tool_choice=self._tool_choice,
                 extra_headers={
                     "HTTP-Referer": HTTP_REFERRER,
                     "X-Title": X_TITLE,
