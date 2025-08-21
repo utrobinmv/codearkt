@@ -9,7 +9,7 @@ from mcp import ClientSession, Tool
 from mcp.types import ContentBlock
 from mcp.client.streamable_http import streamablehttp_client
 
-AGENT_TIMEOUT = int(os.getenv("AGENT_TIMEOUT", 600))
+AGENT_TIMEOUT = int(os.getenv("AGENT_TIMEOUT", 24 * 60 * 60))
 SERVER_URL_TEMPLATE = "http://host.docker.internal:{port}"
 
 

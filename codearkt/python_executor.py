@@ -19,7 +19,7 @@ from codearkt.tools import fetch_tools
 from codearkt.util import get_unique_id, truncate_content, is_correct_json
 
 
-IMAGE: str = "phoenix120/codearkt_http:v2"
+IMAGE: str = "phoenix120/codearkt_http:v3"
 MEM_LIMIT: str = "512m"
 CPU_QUOTA: int = 50000
 CPU_PERIOD: int = 100000
