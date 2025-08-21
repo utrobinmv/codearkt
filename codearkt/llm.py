@@ -8,6 +8,7 @@ from openai.types.chat.chat_completion_message_param import ChatCompletionMessag
 from openai.types.chat.chat_completion_chunk import ChatCompletionChunk, ChoiceDelta
 
 load_dotenv()
+
 BASE_URL = os.getenv("BASE_URL", "https://openrouter.ai/api/v1")
 API_KEY = os.getenv("OPENROUTER_API_KEY", "")
 HTTP_REFERRER = os.getenv("HTTP_REFERRER", "https://github.com/IlyaGusev/codearkt/")
@@ -46,9 +47,6 @@ class LLM:
         model_name: str,
         base_url: str = BASE_URL,
         api_key: str = API_KEY,
-        temperature: float = 0.6,
-        top_p: float = 0.9,
-        max_tokens: int = 8192,
         stop: Optional[List[str]] = None,
         tool_choice: Literal["none", "auto"] = "none",
         **kwargs: Any,
@@ -57,12 +55,7 @@ class LLM:
         self._tool_choice: Literal["none", "auto"] = tool_choice
         self._base_url = base_url
         self._api_key = api_key
-        self.params = {
-            "temperature": temperature,
-            "top_p": top_p,
-            "max_tokens": max_tokens,
-            "stop": stop,
-        }
+        self.params: Dict[str, Any] = {"stop": stop}
         for k, v in kwargs.items():
             if k not in self.params:
                 self.params[k] = v
@@ -73,6 +66,7 @@ class LLM:
         if "gpt-5" in self._model_name:
             if messages[0].role == "system":
                 messages[0].role = "developer"
+            self._tool_choice = "auto"
 
         casted_messages = [
             cast(ChatCompletionMessageParam, message.model_dump(exclude_none=True))
