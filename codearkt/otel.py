@@ -21,7 +21,7 @@ from openinference.instrumentation.openai import OpenAIInstrumentor
 from wrapt import wrap_function_wrapper  # type: ignore
 
 from codearkt.codeact import CodeActAgent
-from codearkt.python_executor import PythonExecutor
+from codearkt.python_executor import PythonExecutor, ExecResult
 from codearkt.llm import ChatMessage
 
 logger = logging.getLogger(__name__)
@@ -62,12 +62,26 @@ def _get_input_messages(input_value: str) -> List[ChatMessage]:
     return [ChatMessage.model_validate_json(message_str) for message_str in input_messages_str]
 
 
+def _format_message_content(message: ChatMessage) -> str:
+    if isinstance(message.content, str):
+        return message.content
+    assert isinstance(message.content, list)
+    content = ""
+    if len(message.content) == 1 and message.content[0]["type"] == "text":
+        content = message.content[0]["text"]
+    else:
+        content = str(message.content)
+    return content
+
+
 def _get_input_message_attributes(input_value: str) -> Dict[str, Any]:
     input_messages = _get_input_messages(input_value)
     message_attributes = {}
     for idx, message in enumerate(input_messages):
         message_attributes[f"{LLM_INPUT_MESSAGES}.{idx}.{MESSAGE_ROLE}"] = message.role
-        message_attributes[f"{LLM_INPUT_MESSAGES}.{idx}.{MESSAGE_CONTENT}"] = str(message.content)
+        message_attributes[f"{LLM_INPUT_MESSAGES}.{idx}.{MESSAGE_CONTENT}"] = (
+            _format_message_content(message)
+        )
     return message_attributes
 
 
@@ -75,7 +89,9 @@ def _get_output_message_attributes(messages: List[ChatMessage]) -> Dict[str, Any
     message_attributes = {}
     for idx, message in enumerate(messages):
         message_attributes[f"{LLM_OUTPUT_MESSAGES}.{idx}.{MESSAGE_ROLE}"] = message.role
-        message_attributes[f"{LLM_OUTPUT_MESSAGES}.{idx}.{MESSAGE_CONTENT}"] = str(message.content)
+        message_attributes[f"{LLM_OUTPUT_MESSAGES}.{idx}.{MESSAGE_CONTENT}"] = (
+            _format_message_content(message)
+        )
     return message_attributes
 
 
@@ -161,7 +177,11 @@ class _StepWrapper:
             },
         ) as span:
             result: List[ChatMessage] = await wrapped(*args, **kwargs)
-            conversation = "\n\n".join([f"{message.role}: {message.content}" for message in result])
+            formatted_lines = []
+            for message in result:
+                content = _format_message_content(message)
+                formatted_lines.append(f"{message.role}: {content}")
+            conversation = "\n\n".join(formatted_lines)
             span.set_status(trace_api.StatusCode.OK)
             span.set_attribute(OUTPUT_VALUE, conversation)
             output_message_attributes = _get_output_message_attributes(result)
@@ -197,12 +217,10 @@ class _ToolWrapper:
                 **dict(get_attributes_from_context()),
             },
         ) as span:
-            result = await wrapped(*args, **kwargs)
-
-            try:
-                span.set_attribute(OUTPUT_VALUE, safe_json_dumps(result))
-            except Exception:
-                span.set_attribute(OUTPUT_VALUE, str(result))
+            result: ExecResult = await wrapped(*args, **kwargs)
+            message = result.to_message()
+            content = _format_message_content(message)
+            span.set_attribute(OUTPUT_VALUE, content)
 
             span.set_status(trace_api.StatusCode.OK)
             return result
@@ -269,11 +287,11 @@ class CodeActInstrumentor(BaseInstrumentor):  # type: ignore
             wrapper=ainvoke_wrapper,
         )
 
-        self._original_tool_invoke_method = getattr(PythonExecutor, "invoke", None)
+        self._original_tool_invoke_method = getattr(PythonExecutor, "ainvoke", None)
         tool_wrapper = _ToolWrapper(tracer=self._tracer)
         wrap_function_wrapper(
             module="codearkt.python_executor",
-            name="PythonExecutor.invoke",
+            name="PythonExecutor.ainvoke",
             wrapper=tool_wrapper,
         )
 

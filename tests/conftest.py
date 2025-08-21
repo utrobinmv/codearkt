@@ -13,7 +13,7 @@ import uvicorn
 from PIL import Image
 from dotenv import load_dotenv
 from mcp.server.fastmcp import FastMCP
-from academia_mcp.tools import arxiv_download, arxiv_search
+from academia_mcp.tools import arxiv_download, arxiv_search, document_qa
 
 from codearkt.llm import LLM
 from codearkt.codeact import CodeActAgent
@@ -33,6 +33,11 @@ def gpt_4o() -> LLM:
 @pytest.fixture
 def deepseek() -> LLM:
     return LLM(model_name="deepseek/deepseek-chat-v3-0324")
+
+
+@pytest.fixture
+def gpt_5_mini() -> LLM:
+    return LLM(model_name="gpt-5-mini")
 
 
 @pytest.fixture
@@ -86,6 +91,7 @@ class MCPServerTest:
         mcp_server = FastMCP("Academia MCP", stateless_http=True)
         mcp_server.add_tool(arxiv_search)
         mcp_server.add_tool(arxiv_download)
+        mcp_server.add_tool(document_qa)
         mcp_server.add_tool(show_image)
         app = mcp_server.streamable_http_app()
         agent_app = get_agent_app(

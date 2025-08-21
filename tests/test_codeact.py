@@ -75,6 +75,20 @@ class TestCodeActAgent:
         str_result = str(result).replace(",", "").replace(".", "").replace(" ", "")
         assert "1873272970937648109531" in str_result, result
 
+    async def test_codeact_gpt_5_mini(self, gpt_5_mini: LLM) -> None:
+        agent = CodeActAgent(
+            name="agent",
+            description="Just agent",
+            llm=gpt_5_mini,
+            tool_names=[],
+        )
+        result = await agent.ainvoke(
+            [ChatMessage(role="user", content="What is 432412421249 * 4332144219?")],
+            session_id=get_unique_id(),
+        )
+        str_result = str(result).replace(",", "").replace(".", "").replace(" ", "")
+        assert "1873272970937648109531" in str_result, result
+
     async def test_codeact_max_iterations(
         self, deepseek: LLM, mcp_server_test: MCPServerTest
     ) -> None:

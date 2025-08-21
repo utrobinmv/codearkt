@@ -4,6 +4,7 @@ import os
 from typing import Iterator, List, Dict, Any
 
 import gradio as gr
+import fire  # type: ignore
 
 from codearkt.event_bus import AgentEvent, EventType
 from codearkt.llm import ChatMessage
@@ -146,9 +147,15 @@ class GradioUI:
             chat_iface.textbox.stop(_on_stop, inputs=[session_id_state], outputs=[session_id_state])
         return demo
 
-    def run(self) -> None:
-        self.create_app().launch(show_error=True)
+    def run(self, share: bool = False) -> None:
+        app = self.create_app()
+        app.queue()
+        app.launch(show_error=True, share=share)
+
+
+def main(share: bool = False) -> None:
+    GradioUI().run(share=share)
 
 
 if __name__ == "__main__":
-    GradioUI().run()
+    fire.Fire(main)

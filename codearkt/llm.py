@@ -68,6 +68,10 @@ class LLM:
     async def astream(
         self, messages: ChatMessages, **kwargs: Any
     ) -> AsyncGenerator[ChoiceDelta, None]:
+        if "gpt-5" in self.model_name:
+            if messages[0].role == "system":
+                messages[0].role = "developer"
+
         casted_messages = [
             cast(ChatCompletionMessageParam, message.model_dump(exclude_none=True))
             for message in messages

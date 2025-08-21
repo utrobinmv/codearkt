@@ -24,7 +24,7 @@ MEM_LIMIT: str = "512m"
 CPU_QUOTA: int = 50000
 CPU_PERIOD: int = 100000
 EXEC_TIMEOUT: int = 24 * 60 * 60  # 24 hours
-CLEANUP_TIMEOUT: int = 30
+CLEANUP_TIMEOUT: int = 10
 PIDS_LIMIT: int = 64
 NET_NAME: str = "sandbox_net"
 CONTAINER_NAME: str = "codearkt_http"
@@ -36,13 +36,20 @@ _DOCKER_LOCK: threading.Lock = threading.Lock()
 
 def cleanup_container(signum: Optional[Any] = None, frame: Optional[Any] = None) -> None:
     global _CONTAINER
-    with _DOCKER_LOCK:
-        if _CONTAINER:
+
+    acquired: bool = _DOCKER_LOCK.acquire(timeout=CLEANUP_TIMEOUT)
+    try:
+        if acquired and _CONTAINER:
             try:
+                _CONTAINER.stop(timeout=CLEANUP_TIMEOUT)
                 _CONTAINER.remove(force=True)
                 _CONTAINER = None
             except Exception:
                 pass
+    finally:
+        if acquired:
+            _DOCKER_LOCK.release()
+
     if signum == signal.SIGINT:
         raise KeyboardInterrupt()
 
@@ -180,7 +187,7 @@ class PythonExecutor:
         self.url = self._get_url()
         self.is_ready = False
 
-    async def invoke(self, code: str) -> ExecResult:
+    async def ainvoke(self, code: str) -> ExecResult:
         if not self.tools_are_checked:
             await self._check_tools()
             self.tools_are_checked = True

@@ -326,7 +326,7 @@ class CodeActAgent:
 
         # Execute code
         try:
-            code_result = await python_executor.invoke(code_action)
+            code_result = await python_executor.ainvoke(code_action)
             self._log(
                 f"Code result: {code_result}",
                 run_id=run_id,
