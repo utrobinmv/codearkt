@@ -19,7 +19,6 @@ def main() -> None:
                 break
             session_id = session_id or get_unique_id()
             real_messages.append(ChatMessage(role="user", content=message))
-            print(real_messages)
             events = query_agent(real_messages, session_id=session_id)
             for event in events:
                 is_root_agent = len(agent_names) == 1
