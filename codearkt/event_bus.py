@@ -5,7 +5,7 @@ from collections import defaultdict
 
 from pydantic import BaseModel
 
-STREAM_TIMEOUT = 120
+STREAM_TIMEOUT = 24 * 60 * 60  # 24 hours
 
 
 class EventType(StrEnum):
