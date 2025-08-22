@@ -42,7 +42,7 @@ def deepseek_small_context() -> LLM:
 
 @pytest.fixture
 def gpt_5_mini() -> LLM:
-    return LLM(model_name="gpt-5-mini")
+    return LLM(model_name="gpt-5-mini", tool_choice="auto")
 
 
 @pytest.fixture
