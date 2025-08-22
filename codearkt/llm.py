@@ -1,5 +1,7 @@
 import os
 import copy
+import logging
+import traceback
 from typing import Dict, Any, List, cast, AsyncGenerator, Optional
 
 import tiktoken
@@ -56,6 +58,7 @@ class LLM:
         base_url: str = BASE_URL,
         api_key: str = API_KEY,
         max_history_tokens: int = 200000,
+        num_retries: int = 3,
         **kwargs: Any,
     ) -> None:
         self._model_name = model_name
@@ -63,6 +66,8 @@ class LLM:
         self._api_key = api_key
         self._max_history_tokens = max_history_tokens
         self._params: Dict[str, Any] = {}
+        self._num_retries = num_retries
+        self._logger = logging.getLogger(self.__class__.__name__)
         for k, v in kwargs.items():
             self._params[k] = v
 
@@ -99,16 +104,25 @@ class LLM:
         ]
 
         async with AsyncOpenAI(base_url=self._base_url, api_key=self._api_key) as api:
-            stream: AsyncStream[ChatCompletionChunk] = await api.chat.completions.create(
-                model=self._model_name,
-                messages=casted_messages,
-                stream=True,
-                extra_headers={
-                    "HTTP-Referer": HTTP_REFERRER,
-                    "X-Title": X_TITLE,
-                },
-                **api_params,
-            )
-            async for event in stream:
-                event_typed: ChatCompletionChunk = event
-                yield event_typed
+            for retry_num in range(self._num_retries):
+                try:
+                    stream: AsyncStream[ChatCompletionChunk] = await api.chat.completions.create(
+                        model=self._model_name,
+                        messages=casted_messages,
+                        stream=True,
+                        extra_headers={
+                            "HTTP-Referer": HTTP_REFERRER,
+                            "X-Title": X_TITLE,
+                        },
+                        **api_params,
+                    )
+                    async for event in stream:
+                        event_typed: ChatCompletionChunk = event
+                        yield event_typed
+                    break
+                except Exception:
+                    traceback.print_exc()
+                    if retry_num == self._num_retries - 1:
+                        raise
+                    self._logger.warning("Retrying LLM call...")
+                    continue
