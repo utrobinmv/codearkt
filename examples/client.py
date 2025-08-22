@@ -1,34 +1,15 @@
-from typing import Iterator
-
-import httpx
 import fire  # type: ignore
 
-from codearkt.event_bus import AgentEvent
-
-
-HEADERS = {"Content-Type": "application/json", "Accept": "text/event-stream"}
-
-
-def query_manager_agent(
-    query: str,
-    base_url: str = "http://localhost:5055",
-) -> Iterator[AgentEvent]:
-    url = f"{base_url}/agents/manager"
-    payload = {"messages": [{"role": "user", "content": query}], "stream": True}
-
-    with httpx.stream("POST", url, json=payload, headers=HEADERS, timeout=60) as response:
-        response.raise_for_status()
-        for chunk in response.iter_text():
-            if chunk:
-                event = AgentEvent.model_validate_json(chunk)
-                yield event
+from codearkt.client import query_agent
+from codearkt.llm import ChatMessage
 
 
 DEFAULT_QUERY = "Find an abstract of the PingPong paper by Ilya Gusev"
 
 
-def main(query: str = DEFAULT_QUERY) -> None:
-    for event in query_manager_agent(query):
+def main(query: str = DEFAULT_QUERY, base_url: str = "http://localhost:5055") -> None:
+    messages = [ChatMessage(role="user", content=query)]
+    for event in query_agent(messages, base_url=base_url):
         if event.content:
             print(event.content, end="", flush=True)
 

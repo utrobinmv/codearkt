@@ -1,4 +1,3 @@
-import httpx
 import tempfile
 import os
 from typing import Iterator, List, Dict, Any
@@ -6,40 +5,13 @@ from typing import Iterator, List, Dict, Any
 import gradio as gr
 import fire  # type: ignore
 
-from codearkt.event_bus import AgentEvent, EventType
+from codearkt.event_bus import EventType
 from codearkt.llm import ChatMessage
 from codearkt.util import get_unique_id
+from codearkt.client import query_agent, stop_agent
 
-HEADERS = {"Content-Type": "application/json", "Accept": "text/event-stream"}
 CODE_TITLE = "Code execution result"
 BASE_URL = "http://localhost:5055"
-
-
-def query_manager_agent(
-    history: List[ChatMessage],
-    *,
-    session_id: str | None = None,
-    base_url: str = BASE_URL,
-) -> Iterator[AgentEvent]:
-    url = f"{base_url}/agents/manager"
-    serialized_history = [m.model_dump() for m in history]
-    payload = {"messages": serialized_history, "stream": True}
-    if session_id is not None:
-        payload["session_id"] = session_id
-
-    timeout = httpx.Timeout(connect=10, pool=None, read=None, write=None)
-    with httpx.stream("POST", url, json=payload, headers=HEADERS, timeout=timeout) as response:
-        response.raise_for_status()
-        for chunk in response.iter_text():
-            if chunk:
-                yield AgentEvent.model_validate_json(chunk)
-
-
-def stop_agent(session_id: str) -> None:
-    try:
-        httpx.post(f"{BASE_URL}/agents/cancel", json={"session_id": session_id}, timeout=5.0)
-    except httpx.HTTPError:
-        pass
 
 
 def bot(
@@ -51,7 +23,7 @@ def bot(
     history = []
     session_id = session_id or get_unique_id()
     real_messages.append(ChatMessage(role="user", content=message))
-    events = query_manager_agent(real_messages, session_id=session_id)
+    events = query_agent(real_messages, session_id=session_id, base_url=BASE_URL)
     agent_names: List[str] = []
     history.append({"role": "assistant", "content": ""})
     for event in events:
@@ -141,7 +113,7 @@ class GradioUI:
 
             def _on_stop(session_id: str | None) -> str | None:
                 if session_id:
-                    stop_agent(session_id)
+                    stop_agent(session_id, base_url=BASE_URL)
                 return session_id
 
             chat_iface.textbox.stop(_on_stop, inputs=[session_id_state], outputs=[session_id_state])

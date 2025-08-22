@@ -1,11 +1,13 @@
 import os
-from typing import Dict, Any, List, cast, AsyncGenerator, Optional, Literal
+import copy
+from typing import Dict, Any, List, cast, AsyncGenerator, Optional
 
+import tiktoken
 from dotenv import load_dotenv
 from pydantic import BaseModel
 from openai import AsyncOpenAI, AsyncStream
 from openai.types.chat.chat_completion_message_param import ChatCompletionMessageParam
-from openai.types.chat.chat_completion_chunk import ChatCompletionChunk, ChoiceDelta
+from openai.types.chat.chat_completion_chunk import ChatCompletionChunk
 
 load_dotenv()
 
@@ -41,46 +43,66 @@ class ChatMessage(BaseModel):  # type: ignore
 ChatMessages = List[ChatMessage]
 
 
+def count_openai_tokens(messages: ChatMessages) -> int:
+    encoding = tiktoken.encoding_for_model("gpt-4o")
+    tokens = [encoding.encode(str(message.content)) for message in messages]
+    return sum(len(token) for token in tokens) + 3 * len(messages)
+
+
 class LLM:
     def __init__(
         self,
         model_name: str,
         base_url: str = BASE_URL,
         api_key: str = API_KEY,
-        stop: Optional[List[str]] = None,
-        tool_choice: Literal["none", "auto"] = "none",
+        max_history_tokens: int = 200000,
         **kwargs: Any,
     ) -> None:
         self._model_name = model_name
-        self._tool_choice: Literal["none", "auto"] = tool_choice
         self._base_url = base_url
         self._api_key = api_key
-        self.params: Dict[str, Any] = {"stop": stop}
+        self._max_history_tokens = max_history_tokens
+        self._params: Dict[str, Any] = {}
         for k, v in kwargs.items():
-            if k not in self.params:
-                self.params[k] = v
+            self._params[k] = v
+
+    def _trim_messages(self, messages: ChatMessages) -> ChatMessages:
+        tokens_count = count_openai_tokens(messages)
+        system_message = None
+        if messages[0].role == "system":
+            system_message = messages[0]
+            messages = messages[1:]
+        while tokens_count > self._max_history_tokens and len(messages) >= 2:
+            tokens_count -= count_openai_tokens(messages[:2])
+            messages = messages[2:]
+        if system_message:
+            messages = [system_message] + messages
+        return messages
 
     async def astream(
         self, messages: ChatMessages, **kwargs: Any
-    ) -> AsyncGenerator[ChoiceDelta, None]:
+    ) -> AsyncGenerator[ChatCompletionChunk, None]:
+        messages = copy.deepcopy(messages)
+        api_params = {**self._params, **kwargs}
+
         if "gpt-5" in self._model_name:
             if messages[0].role == "system":
                 messages[0].role = "developer"
-            self._tool_choice = "auto"
+            api_params.pop("stop", None)
+            if "max_tokens" in api_params:
+                api_params["max_completion_tokens"] = api_params.pop("max_tokens")
 
+        messages = self._trim_messages(messages)
         casted_messages = [
             cast(ChatCompletionMessageParam, message.model_dump(exclude_none=True))
             for message in messages
         ]
-
-        api_params = {**self.params, **kwargs}
 
         async with AsyncOpenAI(base_url=self._base_url, api_key=self._api_key) as api:
             stream: AsyncStream[ChatCompletionChunk] = await api.chat.completions.create(
                 model=self._model_name,
                 messages=casted_messages,
                 stream=True,
-                tool_choice=self._tool_choice,
                 extra_headers={
                     "HTTP-Referer": HTTP_REFERRER,
                     "X-Title": X_TITLE,
@@ -89,5 +111,4 @@ class LLM:
             )
             async for event in stream:
                 event_typed: ChatCompletionChunk = event
-                delta = event_typed.choices[0].delta
-                yield delta
+                yield event_typed

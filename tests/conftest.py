@@ -36,6 +36,11 @@ def deepseek() -> LLM:
 
 
 @pytest.fixture
+def deepseek_small_context() -> LLM:
+    return LLM(model_name="deepseek/deepseek-chat-v3-0324", max_history_tokens=100)
+
+
+@pytest.fixture
 def gpt_5_mini() -> LLM:
     return LLM(model_name="gpt-5-mini")
 

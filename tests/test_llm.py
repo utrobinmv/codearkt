@@ -8,16 +8,34 @@ class TestLLM:
         )
 
         assert llm._model_name == "test-model"
-        assert llm.params["temperature"] == 0.25
-        assert llm.params["top_p"] == 0.3
-        assert llm.params["max_tokens"] == 1024
-        assert llm.params["stop"] == ["STOP"]
+        assert llm._params["temperature"] == 0.25
+        assert llm._params["top_p"] == 0.3
+        assert llm._params["max_tokens"] == 1024
+        assert llm._params["stop"] == ["STOP"]
 
     async def test_llm_astream(self, deepseek: LLM) -> None:
         output = ""
-        async for chunk in deepseek.astream(
+        async for event in deepseek.astream(
             [ChatMessage(role="user", content="Output only 'Hello, world!'")],
         ):
-            if chunk.content:
-                output += chunk.content
+            delta = event.choices[0].delta
+            if delta.content:
+                output += delta.content
         assert "Hello, world!" in output
+
+    async def test_llm_max_history_tokens(self, deepseek_small_context: LLM) -> None:
+        messages = [
+            ChatMessage(role="user", content="Hello, world!"),
+            ChatMessage(role="assistant", content="Hello!"),
+        ] * 10000
+        output = ""
+        usage = None
+        async for event in deepseek_small_context.astream(messages):
+            delta = event.choices[0].delta
+            if delta.content:
+                output += delta.content
+            if event.usage:
+                usage = event.usage
+        assert usage
+        assert usage.prompt_tokens < deepseek_small_context._max_history_tokens
+        assert output

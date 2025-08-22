@@ -32,33 +32,6 @@ def extract_code_from_text(text: str) -> str | None:
     return None
 
 
-def convert_code_to_content(
-    messages: List[ChatMessage], end_code_sequence: str
-) -> List[ChatMessage]:
-    for message in messages:
-        if message.role != "assistant":
-            continue
-        if not message.tool_calls:
-            continue
-        for tool_call in message.tool_calls:
-            if tool_call.function.name != "python_interpreter":
-                continue
-            code_action = str(tool_call.function.arguments).strip()
-            if not code_action.startswith("```"):
-                code_action = code_action.lstrip("`")
-                code_action = "```" + code_action
-            if not code_action.endswith("```"):
-                code_action = code_action.rstrip("`")
-                code_action += "```"
-            code_action = code_action.strip() + end_code_sequence
-            if isinstance(message.content, str):
-                message.content += "\n" + code_action
-            else:
-                message.content.append({"text": code_action})
-        message.tool_calls = []
-    return messages
-
-
 @dataclass
 class Prompts:
     system: Template
@@ -179,10 +152,6 @@ class CodeActAgent:
             current_date = datetime.now().strftime("%Y-%m-%d")
             system_prompt = self.prompts.system.render(tools=tools, current_date=current_date)
 
-            # Form input messages
-            messages = convert_code_to_content(
-                messages, end_code_sequence=self.prompts.end_code_sequence
-            )
             messages = [ChatMessage(role="system", content=system_prompt)] + messages
 
             for step_number in range(1, self.max_iterations + 1):
@@ -278,10 +247,11 @@ class CodeActAgent:
 
         output_text = ""
         async for event in output_stream:
-            if isinstance(event.content, str):
-                chunk = event.content
-            elif isinstance(event.content, list):
-                chunk = "\n".join([str(item) for item in event.content])
+            delta = event.choices[0].delta
+            if isinstance(delta.content, str):
+                chunk = delta.content
+            elif isinstance(delta.content, list):
+                chunk = "\n".join([str(item) for item in delta.content])
             output_text += chunk
             await self._publish_event(event_bus, session_id, EventType.OUTPUT, chunk)
         await self._publish_event(event_bus, session_id, EventType.OUTPUT, "\n")
@@ -372,10 +342,11 @@ class CodeActAgent:
         output_stream = self.llm.astream(input_messages, stop=self.prompts.stop_sequences)
         output_text = ""
         async for event in output_stream:
-            if isinstance(event.content, str):
-                chunk = event.content
-            elif isinstance(event.content, list):
-                chunk = "\n".join([str(item) for item in event.content])
+            delta = event.choices[0].delta
+            if isinstance(delta.content, str):
+                chunk = delta.content
+            elif isinstance(delta.content, list):
+                chunk = "\n".join([str(item) for item in delta.content])
             output_text += chunk
             await self._publish_event(event_bus, session_id, EventType.OUTPUT, chunk)
 
@@ -417,8 +388,11 @@ class CodeActAgent:
         output_text = plan_prefix
 
         async for event in output_stream:
-            assert isinstance(event.content, str)
-            chunk = event.content
+            delta = event.choices[0].delta
+            chunk = delta.content
+            if chunk is None:
+                continue
+            assert isinstance(chunk, str), event
             output_text += chunk
             await self._publish_event(event_bus, session_id, EventType.OUTPUT, chunk)
 
