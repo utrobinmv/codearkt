@@ -267,6 +267,12 @@ class CodeActAgent:
         self._log(
             f"Step output: {output_text}", run_id=run_id, session_id=session_id, level=logging.DEBUG
         )
+
+        for stop_sequence in self.prompts.stop_sequences:
+            if stop_sequence in output_text:
+                output_text = output_text.split(stop_sequence)[0].strip()
+                break
+
         code_action = extract_code_from_text(output_text)
         new_messages = []
         if code_action is None:
