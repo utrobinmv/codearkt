@@ -10,6 +10,7 @@ from mcp.types import ContentBlock
 from mcp.client.streamable_http import streamablehttp_client
 
 AGENT_TIMEOUT = int(os.getenv("AGENT_TIMEOUT", 24 * 60 * 60))
+TOOL_TIMEOUT = int(os.getenv("TOOL_TIMEOUT", 12 * 60 * 60))
 SERVER_URL_TEMPLATE = "http://host.docker.internal:{port}"
 
 
@@ -20,7 +21,10 @@ _tool_schemas: Dict[str, Tool] = {}
 
 async def _acall(tool: str, tool_server_port: int, *args: Any, **kwargs: Any) -> ToolReturnType:
     base_url = SERVER_URL_TEMPLATE.format(port=tool_server_port)
-    async with streamablehttp_client(base_url + "/mcp") as (
+    async with streamablehttp_client(
+        base_url + "/mcp",
+        sse_read_timeout=TOOL_TIMEOUT,
+    ) as (
         read_stream,
         write_stream,
         _,
