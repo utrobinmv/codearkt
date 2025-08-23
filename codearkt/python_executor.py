@@ -5,6 +5,7 @@ import asyncio
 import atexit
 import signal
 import json
+import traceback
 from typing import Optional, Any, List, Dict, Sequence
 import threading
 
@@ -19,7 +20,7 @@ from codearkt.tools import fetch_tools
 from codearkt.util import get_unique_id, truncate_content, is_correct_json
 
 
-IMAGE: str = "phoenix120/codearkt_http:v4"
+IMAGE: str = "phoenix120/codearkt_http:v5"
 MEM_LIMIT: str = "512m"
 CPU_QUOTA: int = 50000
 CPU_PERIOD: int = 100000
@@ -226,11 +227,14 @@ class PythonExecutor:
             "interpreter_id": self.interpreter_id,
         }
 
-        async with httpx.AsyncClient(limits=httpx.Limits(keepalive_expiry=0)) as client:
-            resp = await client.post(f"{self.url}/exec", json=payload, timeout=EXEC_TIMEOUT)
-            resp.raise_for_status()
-            out = resp.json()
-            result: ExecResult = ExecResult.model_validate(out)
+        try:
+            async with httpx.AsyncClient(limits=httpx.Limits(keepalive_expiry=0)) as client:
+                resp = await client.post(f"{self.url}/exec", json=payload, timeout=EXEC_TIMEOUT)
+                resp.raise_for_status()
+                out = resp.json()
+                result: ExecResult = ExecResult.model_validate(out)
+        except Exception:
+            result = ExecResult(stdout="", error=traceback.format_exc())
 
         if result.stdout:
             result.stdout = truncate_content(result.stdout)

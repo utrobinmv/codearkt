@@ -23,6 +23,7 @@ async def _acall(tool: str, tool_server_port: int, *args: Any, **kwargs: Any) ->
     base_url = SERVER_URL_TEMPLATE.format(port=tool_server_port)
     async with streamablehttp_client(
         base_url + "/mcp",
+        timeout=TOOL_TIMEOUT,
         sse_read_timeout=TOOL_TIMEOUT,
     ) as (
         read_stream,
