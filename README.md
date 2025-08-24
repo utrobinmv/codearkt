@@ -115,15 +115,6 @@ examples/
 
 ---
 
-## 🗺️ Roadmap
-
-- [ ] Otel integration
-- [ ] CI for the Docker image
-- [ ] Full documentation & tutorials
-- [ ] Test coverage
-
----
-
 ## 🤝 Contributing
 
 Pull requests are welcome! Please:
