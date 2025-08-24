@@ -9,9 +9,9 @@ from codearkt.event_bus import EventType
 from codearkt.llm import ChatMessage
 from codearkt.util import get_unique_id
 from codearkt.client import query_agent, stop_agent
+from codearkt.server import DEFAULT_SERVER_PORT, DEFAULT_SERVER_HOST
 
 CODE_TITLE = "Code execution result"
-BASE_URL = "http://localhost:5055"
 
 
 def bot(
@@ -19,11 +19,13 @@ def bot(
     history: List[Dict[str, Any]],
     session_id: str | None,
     real_messages: List[ChatMessage],
+    host: str,
+    port: int,
 ) -> Iterator[tuple[List[Dict[str, Any]], str | None, List[ChatMessage]]]:
     history = []
     session_id = session_id or get_unique_id()
     real_messages.append(ChatMessage(role="user", content=message))
-    events = query_agent(real_messages, session_id=session_id, base_url=BASE_URL)
+    events = query_agent(real_messages, session_id=session_id, host=host, port=port)
     agent_names: List[str] = []
     history.append({"role": "assistant", "content": ""})
     for event in events:
@@ -79,15 +81,17 @@ def bot(
 
 
 class GradioUI:
-    def create_app(self) -> Any:
+    def create_app(self, host: str, port: int) -> Any:
         with gr.Blocks(theme=gr.themes.Soft(), fill_height=True, fill_width=True) as demo:
             session_id_state = gr.State(None)
             real_messages_state = gr.State([])
+            host_state = gr.State(host)
+            port_state = gr.State(port)
 
             chat_iface = gr.ChatInterface(
                 bot,
                 type="messages",
-                additional_inputs=[session_id_state, real_messages_state],
+                additional_inputs=[session_id_state, real_messages_state, host_state, port_state],
                 additional_outputs=[session_id_state, real_messages_state],
                 save_history=True,
             )
@@ -113,20 +117,22 @@ class GradioUI:
 
             def _on_stop(session_id: str | None) -> str | None:
                 if session_id:
-                    stop_agent(session_id, base_url=BASE_URL)
+                    stop_agent(session_id, host=host, port=port)
                 return session_id
 
             chat_iface.textbox.stop(_on_stop, inputs=[session_id_state], outputs=[session_id_state])
         return demo
 
-    def run(self, share: bool = False) -> None:
-        app = self.create_app()
+    def run(self, host: str, port: int, share: bool = False) -> None:
+        app = self.create_app(host=host, port=port)
         app.queue()
         app.launch(show_error=True, share=share)
 
 
-def main(share: bool = False) -> None:
-    GradioUI().run(share=share)
+def main(
+    share: bool = False, host: str = DEFAULT_SERVER_HOST, port: int = DEFAULT_SERVER_PORT
+) -> None:
+    GradioUI().run(share=share, host=host, port=port)
 
 
 if __name__ == "__main__":

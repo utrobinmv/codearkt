@@ -58,24 +58,26 @@ agent = CodeActAgent(
 run_server(agent, mcp_config, port=5055)
 ```
 
-Client:
+Now run a Python client:
+
 ```python
-import json
-import httpx
+from codearkt.client import query_agent
+from codearkt.llm import ChatMessage
 
-headers = {"Content-Type": "application/json", "Accept": "text/event-stream"}
-url = f"http://localhost:5055/agents/manager"
-payload = {"messages": [{"role": "user", "content": "Find an abstract of the 2402.01030 paper"}], "stream": True}
+history = [ChatMessage(role="user", content="Find an abstract of the 2402.01030 paper")]
 
-with httpx.stream("POST", url, json=payload, headers=headers, timeout=600) as response:
-    response.raise_for_status()
-    for event_str in response.iter_text():
-        event = json.loads(event_str)
-        if event["content"]:
-            print(event["content"], end="", flush=True)
+for event in query_agent(history, port=5055):
+    if event.content:
+        print(event.content, end="", flush=True)
 ```
 
 Within seconds, you will see agents collaborating, executing Python snippets, and streaming the results back to your console.
+
+You can also use existing clients, Gradio and terminal:
+```
+uv run -m codearkt.terminal --port 5055
+uv run -m codearkt.gradio --port 5055
+```
 
 ---
 

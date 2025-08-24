@@ -4,18 +4,22 @@ import httpx
 
 from codearkt.event_bus import AgentEvent
 from codearkt.llm import ChatMessage
+from codearkt.server import DEFAULT_SERVER_HOST, DEFAULT_SERVER_PORT
 
 HEADERS = {"Content-Type": "application/json", "Accept": "text/event-stream"}
-BASE_URL = "http://localhost:5055"
 
 
 def query_agent(
     history: List[ChatMessage],
     *,
     session_id: str | None = None,
-    base_url: str = BASE_URL,
+    host: str = DEFAULT_SERVER_HOST,
+    port: int = DEFAULT_SERVER_PORT,
     agent_name: str = "manager",
 ) -> Iterator[AgentEvent]:
+    base_url = f"{host}:{port}"
+    if not base_url.startswith("http"):
+        base_url = f"http://{base_url}"
     url = f"{base_url}/agents/{agent_name}"
     serialized_history = [m.model_dump() for m in history]
     payload = {"messages": serialized_history, "stream": True}
@@ -34,7 +38,12 @@ def query_agent(
                 continue
 
 
-def stop_agent(session_id: str, base_url: str = BASE_URL) -> bool:
+def stop_agent(
+    session_id: str, host: str = DEFAULT_SERVER_HOST, port: int = DEFAULT_SERVER_PORT
+) -> bool:
+    base_url = f"{host}:{port}"
+    if not base_url.startswith("http"):
+        base_url = f"http://{base_url}"
     try:
         httpx.post(f"{base_url}/agents/cancel", json={"session_id": session_id}, timeout=5.0)
         return True

@@ -6,9 +6,10 @@ from codearkt.event_bus import EventType
 from codearkt.llm import ChatMessage
 from codearkt.util import get_unique_id
 from codearkt.client import query_agent, stop_agent
+from codearkt.server import DEFAULT_SERVER_PORT, DEFAULT_SERVER_HOST
 
 
-def main() -> None:
+def main(host: str = DEFAULT_SERVER_HOST, port: int = DEFAULT_SERVER_PORT) -> None:
     real_messages: List[ChatMessage] = []
     session_id: str | None = None
     agent_names: List[str] = []
@@ -19,7 +20,7 @@ def main() -> None:
                 break
             session_id = session_id or get_unique_id()
             real_messages.append(ChatMessage(role="user", content=message))
-            events = query_agent(real_messages, session_id=session_id)
+            events = query_agent(real_messages, session_id=session_id, host=host, port=port)
             for event in events:
                 is_root_agent = len(agent_names) == 1
                 if event.event_type == EventType.TOOL_RESPONSE:
