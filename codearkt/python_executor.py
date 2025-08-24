@@ -1,5 +1,6 @@
 import textwrap
 import time
+import os
 import httpx
 import asyncio
 import atexit
@@ -20,7 +21,9 @@ from codearkt.tools import fetch_tools
 from codearkt.util import get_unique_id, truncate_content, is_correct_json
 
 
-IMAGE: str = "phoenix120/codearkt_http:v5"
+SHA_DIGEST: str = "sha256:109502152db0acbdea118ccd827aaa90cfb92aa53a0cb1d816845cf9b6721f74"
+DEFAULT_IMAGE: str = f"phoenix120/codearkt_http@{SHA_DIGEST}"
+IMAGE: str = os.getenv("CODEARKT_EXECUTOR_IMAGE", DEFAULT_IMAGE)
 MEM_LIMIT: str = "512m"
 CPU_QUOTA: int = 50000
 CPU_PERIOD: int = 100000
@@ -28,7 +31,6 @@ EXEC_TIMEOUT: int = 24 * 60 * 60  # 24 hours
 CLEANUP_TIMEOUT: int = 10
 PIDS_LIMIT: int = 64
 NET_NAME: str = "sandbox_net"
-CONTAINER_NAME: str = "codearkt_http"
 
 _CLIENT: Optional[DockerClient] = None
 _CONTAINER: Optional[Container] = None
@@ -136,7 +138,6 @@ def run_network(client: DockerClient) -> Network:
 def run_container(client: DockerClient, net_name: str) -> Container:
     return client.containers.run(
         IMAGE,
-        name=CONTAINER_NAME,
         detach=True,
         auto_remove=True,
         ports={"8000/tcp": None},
@@ -172,11 +173,8 @@ class PythonExecutor:
             client = _CLIENT
 
             if not _CONTAINER:
-                try:
-                    _CONTAINER = client.containers.get(CONTAINER_NAME)
-                except docker.errors.NotFound:
-                    net = run_network(client)
-                    _CONTAINER = run_container(client, str(net.name))
+                net = run_network(client)
+                _CONTAINER = run_container(client, str(net.name))
 
             self.container = _CONTAINER
         self.tools_server_host = tools_server_host
@@ -266,13 +264,16 @@ class PythonExecutor:
             pass
 
     async def _wait_for_ready(self, max_wait: int = 60) -> None:
+        delay = 0.1
         start_time = time.time()
         while time.time() - start_time < max_wait:
             try:
                 output = await self._call_exec("print('ready')", send_tools=False)
-                assert output.stdout.strip() == "ready"
-                return
+                if output.stdout.strip() == "ready":
+                    return
             except (httpx.RequestError, httpx.TimeoutException, AssertionError):
                 pass
-            await asyncio.sleep(0.1)
+
+            await asyncio.sleep(delay)
+            delay = min(delay * 2, 3.0)
         raise RuntimeError("Container failed to become ready within timeout")
