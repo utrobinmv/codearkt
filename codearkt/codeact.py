@@ -254,6 +254,8 @@ class CodeActAgent:
                 chunk = "\n".join([str(item) for item in delta.content])
             output_text += chunk
             await self._publish_event(event_bus, session_id, EventType.OUTPUT, chunk)
+            if any(stop_sequence in output_text for stop_sequence in self.prompts.stop_sequences):
+                break
         await self._publish_event(event_bus, session_id, EventType.OUTPUT, "\n")
 
         if (

@@ -26,8 +26,12 @@ def query_agent(
     with httpx.stream("POST", url, json=payload, headers=HEADERS, timeout=timeout) as response:
         response.raise_for_status()
         for chunk in response.iter_text():
-            if chunk:
+            if not chunk:
+                continue
+            try:
                 yield AgentEvent.model_validate_json(chunk)
+            except Exception:
+                continue
 
 
 def stop_agent(session_id: str, base_url: str = BASE_URL) -> bool:
