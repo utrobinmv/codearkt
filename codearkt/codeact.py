@@ -299,7 +299,6 @@ class CodeActAgent:
             role="assistant",
             content=output_text,
         )
-        await self._publish_event(event_bus, session_id, EventType.TOOL_CALL, code_action)
         new_messages.append(tool_call_message)
 
         # Execute code

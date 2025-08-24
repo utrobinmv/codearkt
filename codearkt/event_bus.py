@@ -12,7 +12,6 @@ class EventType(StrEnum):
     AGENT_START = "agent_start"
     OUTPUT = "output"
     TOOL_RESPONSE = "observation"
-    TOOL_CALL = "tool_call"
     AGENT_END = "agent_end"
 
 

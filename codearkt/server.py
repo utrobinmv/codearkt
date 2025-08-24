@@ -3,6 +3,18 @@ from typing import Dict, Any, Optional, List, Callable, AsyncGenerator
 
 import uvicorn
 from fastmcp import FastMCP, settings as fastmcp_settings
+from fastmcp.client.client import Client
+from fastmcp.client.transports import (
+    SSETransport,
+    StreamableHttpTransport,
+    ClientTransport,
+)
+from fastmcp.utilities.mcp_config import (
+    MCPConfig,
+    RemoteMCPServer,
+    StdioMCPServer,
+    infer_transport_type_from_url,
+)
 from fastapi import FastAPI
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -15,6 +27,7 @@ from codearkt.util import get_unique_id, find_free_port
 
 DEFAULT_SERVER_HOST = "0.0.0.0"
 DEFAULT_SERVER_PORT = 5055
+PROXY_SSE_READ_TIMEOUT = 12 * 60 * 60
 
 
 fastmcp_settings.stateless_http = True
@@ -140,13 +153,46 @@ def get_agent_app(
 def get_mcp_app(
     mcp_config: Optional[Dict[str, Any]],
     additional_tools: Optional[Dict[str, Callable[..., Any]]] = None,
+    add_prefixes: bool = True,
 ) -> FastAPI:
     mcp: FastMCP[Any] = FastMCP(name="Codearkt MCP Proxy")
     if mcp_config:
-        mcp = FastMCP.as_proxy(mcp_config, name="Codearkt MCP Proxy")
+        cfg = MCPConfig.from_dict(mcp_config)
+        server_count = len(cfg.mcpServers)
+
+        for name, server in cfg.mcpServers.items():
+            transport: Optional[ClientTransport] = None
+            if isinstance(server, RemoteMCPServer):
+                transport_type = server.transport or infer_transport_type_from_url(server.url)
+                if transport_type == "sse":
+                    transport = SSETransport(
+                        server.url,
+                        headers=server.headers,
+                        auth=server.auth,
+                        sse_read_timeout=PROXY_SSE_READ_TIMEOUT,
+                    )
+                else:
+                    transport = StreamableHttpTransport(
+                        server.url,
+                        headers=server.headers,
+                        auth=server.auth,
+                        sse_read_timeout=PROXY_SSE_READ_TIMEOUT,
+                    )
+            elif isinstance(server, StdioMCPServer):
+                transport = server.to_transport()
+
+            assert transport is not None, "Transport is required for the MCP server in the config"
+            client: Client[ClientTransport] = Client(transport=transport)
+            sub_proxy = FastMCP.as_proxy(client)
+            prefix: Optional[str] = None if server_count == 1 else name
+            if not add_prefixes:
+                prefix = None
+            mcp.mount(prefix=prefix, server=sub_proxy)
+
     if additional_tools:
         for name, tool in additional_tools.items():
             mcp.tool(tool, name=name)
+
     return mcp.http_app()
 
 
@@ -157,6 +203,7 @@ def get_main_app(
     server_host: str = DEFAULT_SERVER_HOST,
     server_port: int = DEFAULT_SERVER_PORT,
     additional_tools: Optional[Dict[str, Callable[..., Any]]] = None,
+    add_mcp_server_prefixes: bool = True,
 ) -> FastAPI:
     agent_app = get_agent_app(
         agent=agent,
@@ -164,7 +211,7 @@ def get_main_app(
         server_port=server_port,
         event_bus=event_bus,
     )
-    mcp_app = get_mcp_app(mcp_config, additional_tools)
+    mcp_app = get_mcp_app(mcp_config, additional_tools, add_prefixes=add_mcp_server_prefixes)
     mcp_app.mount("/agents", agent_app)
     return mcp_app
 
@@ -175,6 +222,7 @@ def run_server(
     host: str = DEFAULT_SERVER_HOST,
     port: int = DEFAULT_SERVER_PORT,
     additional_tools: Optional[Dict[str, Callable[..., Any]]] = None,
+    add_mcp_server_prefixes: bool = True,
 ) -> None:
     event_bus = AgentEventBus()
     app = get_main_app(
@@ -184,6 +232,7 @@ def run_server(
         server_port=port,
         additional_tools=additional_tools,
         event_bus=event_bus,
+        add_mcp_server_prefixes=add_mcp_server_prefixes,
     )
     uvicorn.run(
         app,

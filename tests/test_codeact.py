@@ -240,7 +240,6 @@ class TestCodeActAgent:
         assert events[1].content is not None, events[1]
 
         event_types = {event.event_type for event in events}
-        assert EventType.TOOL_CALL in event_types, event_types
         assert EventType.TOOL_RESPONSE in event_types, event_types
 
         contents = [e.content for e in events if e.event_type == EventType.OUTPUT if e.content]
