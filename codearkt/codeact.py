@@ -1,6 +1,7 @@
 import re
 import copy
 import logging
+import traceback
 from pathlib import Path
 from textwrap import dedent
 from datetime import datetime
@@ -161,7 +162,11 @@ class CodeActAgent:
                         f"Planning step {step_number} started", run_id=run_id, session_id=session_id
                     )
                     new_messages = await self._run_planning_step(
-                        messages, tools, session_id, event_bus
+                        messages=messages,
+                        tools=tools,
+                        run_id=run_id,
+                        session_id=session_id,
+                        event_bus=event_bus,
                     )
                     messages.extend(new_messages)
                     self._log(
@@ -241,20 +246,31 @@ class CodeActAgent:
         self._log(
             f"Step inputs: {messages}", run_id=run_id, session_id=session_id, level=logging.DEBUG
         )
-        output_stream = self.llm.astream(messages, stop=self.prompts.stop_sequences)
-
+        self._log(
+            "LLM generates outputs...", run_id=run_id, session_id=session_id, level=logging.INFO
+        )
         output_text = ""
-        async for event in output_stream:
-            delta = event.choices[0].delta
-            if isinstance(delta.content, str):
-                chunk = delta.content
-            elif isinstance(delta.content, list):
-                chunk = "\n".join([str(item) for item in delta.content])
-            output_text += chunk
-            await self._publish_event(event_bus, session_id, EventType.OUTPUT, chunk)
-            if any(stop_sequence in output_text for stop_sequence in self.prompts.stop_sequences):
-                break
-        await self._publish_event(event_bus, session_id, EventType.OUTPUT, "\n")
+        try:
+            output_stream = self.llm.astream(messages, stop=self.prompts.stop_sequences)
+            async for event in output_stream:
+                delta = event.choices[0].delta
+                if isinstance(delta.content, str):
+                    chunk = delta.content
+                elif isinstance(delta.content, list):
+                    chunk = "\n".join([str(item) for item in delta.content])
+                output_text += chunk
+                await self._publish_event(event_bus, session_id, EventType.OUTPUT, chunk)
+                if any(
+                    stop_sequence in output_text for stop_sequence in self.prompts.stop_sequences
+                ):
+                    break
+            await self._publish_event(event_bus, session_id, EventType.OUTPUT, "\n")
+
+        except Exception:
+            exception = traceback.format_exc()
+            error_text = f"LLM failed with error: {exception}. Please try again."
+            self._log(error_text, run_id=run_id, session_id=session_id, level=logging.ERROR)
+            return []
 
         if (
             output_text
@@ -266,6 +282,9 @@ class CodeActAgent:
 
         self._log(
             f"Step output: {output_text}", run_id=run_id, session_id=session_id, level=logging.DEBUG
+        )
+        self._log(
+            "LLM generated outputs!", run_id=run_id, session_id=session_id, level=logging.INFO
         )
 
         for stop_sequence in self.prompts.stop_sequences:
@@ -368,6 +387,7 @@ class CodeActAgent:
         self,
         messages: ChatMessages,
         tools: List[Tool],
+        run_id: str,
         session_id: str,
         event_bus: AgentEventBus | None = None,
     ) -> ChatMessages:
@@ -386,26 +406,33 @@ class CodeActAgent:
         )
         input_messages = [ChatMessage(role="user", content=planning_prompt)]
 
-        output_stream = self.llm.astream(input_messages, stop=[self.prompts.end_plan_sequence])
+        try:
+            output_stream = self.llm.astream(input_messages, stop=[self.prompts.end_plan_sequence])
 
-        plan_prefix = self.prompts.plan_prefix.render().strip() + "\n\n"
-        await self._publish_event(event_bus, session_id, EventType.OUTPUT, plan_prefix)
-        output_text = plan_prefix
+            plan_prefix = self.prompts.plan_prefix.render().strip() + "\n\n"
+            await self._publish_event(event_bus, session_id, EventType.OUTPUT, plan_prefix)
+            output_text = plan_prefix
 
-        async for event in output_stream:
-            delta = event.choices[0].delta
-            chunk = delta.content
-            if chunk is None:
-                continue
-            assert isinstance(chunk, str), event
-            output_text += chunk
-            await self._publish_event(event_bus, session_id, EventType.OUTPUT, chunk)
+            async for event in output_stream:
+                delta = event.choices[0].delta
+                chunk = delta.content
+                if chunk is None:
+                    continue
+                assert isinstance(chunk, str), event
+                output_text += chunk
+                await self._publish_event(event_bus, session_id, EventType.OUTPUT, chunk)
 
-        plan_suffix = "\n\n" + self.prompts.plan_suffix.render().strip() + "\n\n"
-        await self._publish_event(event_bus, session_id, EventType.OUTPUT, plan_suffix)
-        output_text += plan_suffix
+            plan_suffix = "\n\n" + self.prompts.plan_suffix.render().strip() + "\n\n"
+            await self._publish_event(event_bus, session_id, EventType.OUTPUT, plan_suffix)
+            output_text += plan_suffix
 
-        return [ChatMessage(role="assistant", content=output_text)]
+            return [ChatMessage(role="assistant", content=output_text)]
+
+        except Exception:
+            exception = traceback.format_exc()
+            error_text = f"LLM failed with error: {exception}. Please try again."
+            self._log(error_text, run_id=run_id, session_id=session_id, level=logging.ERROR)
+            return []
 
     async def _publish_event(
         self,

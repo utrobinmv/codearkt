@@ -64,8 +64,11 @@ class ExecResult(BaseModel):  # type: ignore
 
     def to_message(self) -> ChatMessage:
         image_content: List[Dict[str, Any]] | None = None
-        output: str = "Stdout:\n" + self.stdout + "\n\n"
-        if self.result is not None:
+        output: str = ""
+        if self.stdout:
+            output += "Output:\n" + self.stdout + "\n\n"
+
+        if self.result:
             try:
                 json_result = json.loads(str(self.result))
                 if isinstance(json_result, dict) and "image_base64" in json_result:
@@ -80,8 +83,10 @@ class ExecResult(BaseModel):  # type: ignore
                 pass
             if not image_content:
                 output += "Last expression:\n" + str(self.result) + "\n\n"
+
         if self.error:
             output += "Error: " + self.error
+
         output = output.strip()
 
         content = []

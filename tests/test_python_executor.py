@@ -112,7 +112,7 @@ def test_execresult_to_message_with_text_result() -> None:
     assert msg.role == "user"
     assert isinstance(msg.content, list)
     text_parts = [c for c in msg.content if c.get("type") == "text"]
-    assert text_parts and "Stdout:" in text_parts[0]["text"]
+    assert text_parts and "Output:" in text_parts[0]["text"]
 
 
 def test_execresult_to_message_with_image(test_image_url: str) -> None:
