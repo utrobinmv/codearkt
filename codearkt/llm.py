@@ -1,10 +1,12 @@
 import os
 import copy
 import logging
-import traceback
+import asyncio
+from contextlib import suppress
 from typing import Dict, Any, List, cast, AsyncGenerator, Optional
 
-import tiktoken
+from httpx import Timeout
+from tiktoken import encoding_for_model
 from dotenv import load_dotenv
 from pydantic import BaseModel
 from openai import AsyncOpenAI, AsyncStream
@@ -46,7 +48,7 @@ ChatMessages = List[ChatMessage]
 
 
 def count_openai_tokens(messages: ChatMessages) -> int:
-    encoding = tiktoken.encoding_for_model("gpt-4o")
+    encoding = encoding_for_model("gpt-4o")
     tokens = [encoding.encode(str(message.content)) for message in messages]
     return sum(len(token) for token in tokens) + 3 * len(messages)
 
@@ -59,6 +61,11 @@ class LLM:
         api_key: str = API_KEY,
         max_history_tokens: int = 200000,
         num_retries: int = 3,
+        connect_timeout_sec: float = 10.0,
+        read_timeout_sec: float = 600.0,
+        write_timeout_sec: float = 600.0,
+        event_idle_timeout_sec: float = 60.0,
+        pool_timeout_sec: float = 600.0,
         **kwargs: Any,
     ) -> None:
         self._model_name = model_name
@@ -68,6 +75,13 @@ class LLM:
         self._params: Dict[str, Any] = {}
         self._num_retries = num_retries
         self._logger = logging.getLogger(self.__class__.__name__)
+        self._event_idle_timeout_sec = event_idle_timeout_sec
+        self._http_timeout = Timeout(
+            connect=connect_timeout_sec,
+            read=read_timeout_sec,
+            write=write_timeout_sec,
+            pool=pool_timeout_sec,
+        )
         for k, v in kwargs.items():
             self._params[k] = v
 
@@ -103,26 +117,42 @@ class LLM:
             for message in messages
         ]
 
-        async with AsyncOpenAI(base_url=self._base_url, api_key=self._api_key) as api:
-            for retry_num in range(self._num_retries):
-                try:
-                    stream: AsyncStream[ChatCompletionChunk] = await api.chat.completions.create(
-                        model=self._model_name,
-                        messages=casted_messages,
-                        stream=True,
-                        extra_headers={
-                            "HTTP-Referer": HTTP_REFERRER,
-                            "X-Title": X_TITLE,
-                        },
-                        **api_params,
-                    )
-                    async for event in stream:
-                        event_typed: ChatCompletionChunk = event
-                        yield event_typed
-                    break
-                except Exception:
-                    traceback.print_exc()
-                    if retry_num == self._num_retries - 1:
-                        raise
-                    self._logger.warning("Retrying LLM call...")
-                    continue
+        async with AsyncOpenAI(
+            base_url=self._base_url,
+            api_key=self._api_key,
+            timeout=self._http_timeout,
+            max_retries=self._num_retries,
+        ) as api:
+            stream: AsyncStream[ChatCompletionChunk] = await api.chat.completions.create(
+                model=self._model_name,
+                messages=casted_messages,
+                stream=True,
+                extra_headers={
+                    "HTTP-Referer": HTTP_REFERRER,
+                    "X-Title": X_TITLE,
+                },
+                timeout=self._http_timeout,
+                **api_params,
+            )
+            stream_iter = stream.__aiter__()
+            try:
+                while True:
+                    try:
+                        event = await asyncio.wait_for(
+                            stream_iter.__anext__(), timeout=self._event_idle_timeout_sec
+                        )
+                    except StopAsyncIteration:
+                        break
+                    except asyncio.TimeoutError as e:
+                        raise TimeoutError(
+                            f"LLM stream idle for {self._event_idle_timeout_sec} seconds"
+                        ) from e
+                    event_typed: ChatCompletionChunk = event
+                    yield event_typed
+            except asyncio.CancelledError:
+                with suppress(Exception):
+                    await stream.close()
+                raise
+            finally:
+                with suppress(Exception):
+                    await stream.close()

@@ -19,7 +19,7 @@ def find_free_port() -> Optional[int]:
             with socket.socket() as s:
                 s.bind(("", port))
                 return port
-        except Exception:
+        except OSError:
             continue
     return None
 

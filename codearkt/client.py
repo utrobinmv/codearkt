@@ -1,6 +1,7 @@
 from typing import Iterator, List
 
 import httpx
+from pydantic import ValidationError
 
 from codearkt.event_bus import AgentEvent
 from codearkt.llm import ChatMessage
@@ -34,7 +35,7 @@ def query_agent(
                 continue
             try:
                 yield AgentEvent.model_validate_json(chunk)
-            except Exception:
+            except ValidationError:
                 continue
 
 

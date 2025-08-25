@@ -1,20 +1,20 @@
 import textwrap
 import time
 import os
-import httpx
 import asyncio
 import atexit
-import signal
 import json
 import traceback
 from typing import Optional, Any, List, Dict, Sequence
 import threading
 
-import docker
+from docker import from_env as docker_from_env
 from docker.models.containers import Container
 from docker.client import DockerClient
+from docker.errors import DockerException, ImageNotFound, NotFound
 from docker.models.networks import Network
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
+from httpx import AsyncClient, HTTPError, TimeoutException, Limits, RequestError
 
 from codearkt.llm import ChatMessage
 from codearkt.tools import fetch_tools
@@ -37,7 +37,7 @@ _CONTAINER: Optional[Container] = None
 _DOCKER_LOCK: threading.Lock = threading.Lock()
 
 
-def cleanup_container(signum: Optional[Any] = None, frame: Optional[Any] = None) -> None:
+def cleanup_container() -> None:
     global _CONTAINER
 
     acquired: bool = _DOCKER_LOCK.acquire(timeout=CLEANUP_TIMEOUT)
@@ -47,19 +47,14 @@ def cleanup_container(signum: Optional[Any] = None, frame: Optional[Any] = None)
                 _CONTAINER.stop(timeout=CLEANUP_TIMEOUT)
                 _CONTAINER.remove(force=True)
                 _CONTAINER = None
-            except Exception:
+            except DockerException:
                 pass
     finally:
         if acquired:
             _DOCKER_LOCK.release()
 
-    if signum == signal.SIGINT:
-        raise KeyboardInterrupt()
-
 
 atexit.register(cleanup_container)
-signal.signal(signal.SIGINT, cleanup_container)
-signal.signal(signal.SIGTERM, cleanup_container)
 
 
 class ExecResult(BaseModel):  # type: ignore
@@ -97,25 +92,25 @@ class ExecResult(BaseModel):  # type: ignore
         return ChatMessage(role="user", content=content)
 
 
-def init_docker() -> docker.DockerClient:
-    client = docker.from_env()
+def init_docker() -> DockerClient:
+    client = docker_from_env()
     try:
         client.ping()  # type: ignore
-    except docker.errors.DockerException as exc:
+    except DockerException as exc:
         raise RuntimeError(
             "Docker daemon is not running or not accessible – skipping PythonExecutor setup."
         ) from exc
 
     try:
         client.images.get(IMAGE)
-    except docker.errors.ImageNotFound:
+    except ImageNotFound:
         try:
             client.images.pull(IMAGE)
-        except docker.errors.DockerException as exc:
+        except DockerException as exc:
             raise RuntimeError(
                 f"Docker image '{IMAGE}' not found locally and failed to pull automatically."
             ) from exc
-    except docker.errors.DockerException as exc:
+    except DockerException as exc:
         raise RuntimeError("Failed to query Docker images – ensure Docker is available.") from exc
     return client
 
@@ -123,7 +118,7 @@ def init_docker() -> docker.DockerClient:
 def run_network(client: DockerClient) -> Network:
     try:
         net = client.networks.get(NET_NAME)
-    except docker.errors.NotFound:
+    except NotFound:
         net = client.networks.create(
             NET_NAME,
             driver="bridge",
@@ -226,12 +221,12 @@ class PythonExecutor:
         }
 
         try:
-            async with httpx.AsyncClient(limits=httpx.Limits(keepalive_expiry=0)) as client:
+            async with AsyncClient(limits=Limits(keepalive_expiry=0)) as client:
                 resp = await client.post(f"{self.url}/exec", json=payload, timeout=EXEC_TIMEOUT)
                 resp.raise_for_status()
                 out = resp.json()
                 result: ExecResult = ExecResult.model_validate(out)
-        except Exception:
+        except (HTTPError, TimeoutException, ValueError, ValidationError):
             result = ExecResult(stdout="", error=traceback.format_exc())
 
         if result.stdout:
@@ -255,12 +250,12 @@ class PythonExecutor:
             "interpreter_id": self.interpreter_id,
         }
         try:
-            async with httpx.AsyncClient(limits=httpx.Limits(keepalive_expiry=0)) as client:
+            async with AsyncClient(limits=Limits(keepalive_expiry=0)) as client:
                 response = await client.post(
                     f"{self.url}/cleanup", json=payload, timeout=CLEANUP_TIMEOUT
                 )
                 response.raise_for_status()
-        except Exception:
+        except (HTTPError, TimeoutException):
             pass
 
     async def _wait_for_ready(self, max_wait: int = 60) -> None:
@@ -271,7 +266,7 @@ class PythonExecutor:
                 output = await self._call_exec("print('ready')", send_tools=False)
                 if output.stdout.strip() == "ready":
                     return
-            except (httpx.RequestError, httpx.TimeoutException, AssertionError):
+            except (RequestError, TimeoutException, AssertionError):
                 pass
 
             await asyncio.sleep(delay)

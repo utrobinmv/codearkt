@@ -101,8 +101,6 @@ class CodeActAgent:
 
         self.logger = logging.getLogger(self.__class__.__name__ + ":" + self.name)
         self.logger.setLevel(self.verbosity_level)
-        if not self.logger.hasHandlers():
-            self.logger.addHandler(logging.StreamHandler())
 
     def get_all_agents(self) -> List[Self]:
         agents = [self]
