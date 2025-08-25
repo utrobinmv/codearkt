@@ -1,7 +1,7 @@
 .PHONY: install black validate test publish
 
 install:
-	uv pip install -e .
+	uv pip install -e .[dev]
 
 black:
 	uv run black examples container codearkt tests --line-length 100
