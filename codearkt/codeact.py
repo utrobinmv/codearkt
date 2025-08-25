@@ -246,9 +246,7 @@ class CodeActAgent:
         self._log(
             f"Step inputs: {messages}", run_id=run_id, session_id=session_id, level=logging.DEBUG
         )
-        self._log(
-            "LLM generates outputs...", run_id=run_id, session_id=session_id, level=logging.INFO
-        )
+        self._log("LLM generates outputs...", run_id=run_id, session_id=session_id)
         output_text = ""
         try:
             output_stream = self.llm.astream(messages, stop=self.prompts.stop_sequences)
@@ -280,23 +278,26 @@ class CodeActAgent:
             chunk = self.prompts.end_code_sequence + "\n"
             output_text += chunk
 
-        self._log(
-            f"Step output: {output_text}", run_id=run_id, session_id=session_id, level=logging.DEBUG
-        )
-        self._log(
-            "LLM generated outputs!", run_id=run_id, session_id=session_id, level=logging.INFO
-        )
-
         for stop_sequence in self.prompts.stop_sequences:
             if stop_sequence in output_text:
                 output_text = output_text.split(stop_sequence)[0].strip()
                 break
 
+        self._log(
+            f"Step output: {output_text}", run_id=run_id, session_id=session_id, level=logging.DEBUG
+        )
+        self._log("LLM generated outputs!", run_id=run_id, session_id=session_id)
+
+        # Code detection
         code_action = extract_code_from_text(output_text)
+
+        # No code action
         new_messages = []
         if code_action is None:
+            self._log("No tool calls detected", run_id=run_id, session_id=session_id)
             new_messages.append(ChatMessage(role="assistant", content=output_text))
             if self._is_final_answer(output_text):
+                self._log("Final answer found!", run_id=run_id, session_id=session_id)
                 return new_messages
             assert self.prompts.no_code_action is not None
             no_code_action_prompt = self.prompts.no_code_action.render()
@@ -320,6 +321,7 @@ class CodeActAgent:
 
         # Execute code
         try:
+            self._log("Executing code...", run_id=run_id, session_id=session_id)
             code_result = await python_executor.ainvoke(code_action)
             self._log(
                 f"Code result: {code_result}",
@@ -332,6 +334,7 @@ class CodeActAgent:
             new_messages.append(code_result_message)
             tool_output: str = str(code_result_message.content[0]["text"]) + "\n"
             await self._publish_event(event_bus, session_id, EventType.TOOL_RESPONSE, tool_output)
+            self._log("Code was executed!", run_id=run_id, session_id=session_id)
         except Exception as e:
             new_messages.append(ChatMessage(role="user", content=f"Error: {e}"))
             self._log(f"Code error: {e}", run_id=run_id, session_id=session_id, level=logging.DEBUG)

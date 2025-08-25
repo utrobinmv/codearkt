@@ -56,12 +56,12 @@ class AgentEventBus:
             content=content,
         )
         if event.session_id not in self.queues:
-            self.queues[event.session_id] = asyncio.Queue(maxsize=1024)
+            self.queues[event.session_id] = asyncio.Queue()
         await self.queues[event.session_id].put(event)
 
     async def stream_events(self, session_id: str) -> AsyncGenerator[AgentEvent, None]:
         if session_id not in self.queues:
-            self.queues[session_id] = asyncio.Queue(maxsize=1024)
+            self.queues[session_id] = asyncio.Queue()
         queue = self.queues[session_id]
         assert session_id in self.root_agent_name, f"Session {session_id} is not tied to an agent"
         root_agent_name = self.root_agent_name[session_id]

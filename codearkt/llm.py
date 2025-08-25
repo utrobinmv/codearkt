@@ -1,11 +1,8 @@
 import os
 import copy
 import logging
-import asyncio
-from contextlib import suppress
 from typing import Dict, Any, List, cast, AsyncGenerator, Optional
 
-from httpx import Timeout
 from tiktoken import encoding_for_model
 from dotenv import load_dotenv
 from pydantic import BaseModel
@@ -19,6 +16,10 @@ BASE_URL = os.getenv("BASE_URL", "https://openrouter.ai/api/v1")
 API_KEY = os.getenv("OPENROUTER_API_KEY", "")
 HTTP_REFERRER = os.getenv("HTTP_REFERRER", "https://github.com/IlyaGusev/codearkt/")
 X_TITLE = os.getenv("X_TITLE", "CodeArkt")
+HEADERS = {
+    "HTTP-Referer": HTTP_REFERRER,
+    "X-Title": X_TITLE,
+}
 
 
 class FunctionCall(BaseModel):  # type: ignore
@@ -61,11 +62,6 @@ class LLM:
         api_key: str = API_KEY,
         max_history_tokens: int = 200000,
         num_retries: int = 3,
-        connect_timeout_sec: float = 10.0,
-        read_timeout_sec: float = 600.0,
-        write_timeout_sec: float = 600.0,
-        event_idle_timeout_sec: float = 60.0,
-        pool_timeout_sec: float = 600.0,
         **kwargs: Any,
     ) -> None:
         self._model_name = model_name
@@ -75,13 +71,6 @@ class LLM:
         self._params: Dict[str, Any] = {}
         self._num_retries = num_retries
         self._logger = logging.getLogger(self.__class__.__name__)
-        self._event_idle_timeout_sec = event_idle_timeout_sec
-        self._http_timeout = Timeout(
-            connect=connect_timeout_sec,
-            read=read_timeout_sec,
-            write=write_timeout_sec,
-            pool=pool_timeout_sec,
-        )
         for k, v in kwargs.items():
             self._params[k] = v
 
@@ -120,39 +109,15 @@ class LLM:
         async with AsyncOpenAI(
             base_url=self._base_url,
             api_key=self._api_key,
-            timeout=self._http_timeout,
             max_retries=self._num_retries,
         ) as api:
             stream: AsyncStream[ChatCompletionChunk] = await api.chat.completions.create(
                 model=self._model_name,
                 messages=casted_messages,
                 stream=True,
-                extra_headers={
-                    "HTTP-Referer": HTTP_REFERRER,
-                    "X-Title": X_TITLE,
-                },
-                timeout=self._http_timeout,
+                extra_headers=HEADERS,
                 **api_params,
             )
-            stream_iter = stream.__aiter__()
-            try:
-                while True:
-                    try:
-                        event = await asyncio.wait_for(
-                            stream_iter.__anext__(), timeout=self._event_idle_timeout_sec
-                        )
-                    except StopAsyncIteration:
-                        break
-                    except asyncio.TimeoutError as e:
-                        raise TimeoutError(
-                            f"LLM stream idle for {self._event_idle_timeout_sec} seconds"
-                        ) from e
-                    event_typed: ChatCompletionChunk = event
-                    yield event_typed
-            except asyncio.CancelledError:
-                with suppress(Exception):
-                    await stream.close()
-                raise
-            finally:
-                with suppress(Exception):
-                    await stream.close()
+            async for event in stream:
+                event_typed: ChatCompletionChunk = event
+                yield event_typed
