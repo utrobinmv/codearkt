@@ -23,6 +23,9 @@ DEFAULT_END_CODE_SEQUENCE = "<end_code>"
 DEFAULT_END_PLAN_SEQUENCE = "<end_plan>"
 DEFAULT_STOP_SEQUENCES = [DEFAULT_END_CODE_SEQUENCE, "Observation:", "Calling tools:"]
 AGENT_TOOL_PREFIX = "agent__"
+DEFAULT_MAX_ITERATIONS = 20
+PLANNING_LAST_N = 50
+PLANNING_CONTENT_MAX_LENGTH = 1000
 
 
 def extract_code_from_text(text: str) -> str | None:
@@ -79,7 +82,7 @@ class CodeActAgent:
         llm: LLM,
         tool_names: Sequence[str] = tuple(),
         prompts: Optional[Prompts] = None,
-        max_iterations: int = 10,
+        max_iterations: int = DEFAULT_MAX_ITERATIONS,
         verbosity_level: int = logging.ERROR,
         planning_interval: Optional[int] = None,
         managed_agents: Optional[List[Self]] = None,
@@ -387,7 +390,10 @@ class CodeActAgent:
         return [ChatMessage(role="assistant", content=output_text)]
 
     def _process_messages_for_planning(
-        self, messages: ChatMessages, last_n: int = 20, content_max_length: int = 1000
+        self,
+        messages: ChatMessages,
+        last_n: int = PLANNING_LAST_N,
+        content_max_length: int = PLANNING_CONTENT_MAX_LENGTH,
     ) -> str:
         def messages_to_string(messages: ChatMessages) -> str:
             str_messages = []
