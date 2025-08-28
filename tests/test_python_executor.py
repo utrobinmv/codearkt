@@ -26,6 +26,24 @@ answer = document_qa(question="What is the capital of France?", document=doc)
 print(answer, end="")
 """
 
+EXPR_SNIPPET_1 = """
+a = 1
+a
+"""
+
+EXPR_SNIPPET_2 = """
+arxiv_download(paper_id="2506.15003")
+"""
+
+BAD_SNIPPET_1 = """from dfdaf import dfadfa
+
+print("Hello!")
+"""
+
+EXCEPT_SNIPPET_1 = """
+1 / 0
+"""
+
 PIP_INSTALL_SNIPPET = """
 import subprocess
 proc = subprocess.run(['pip', 'install', 'transformers'], capture_output=True)
@@ -104,6 +122,39 @@ class TestPythonExecutor:
         )
         result = await executor.ainvoke(SNIPPET_4)
         assert result.stdout and "Error" not in result.stdout, str(result)
+
+    async def test_python_executor_bad_snippet(self) -> None:
+        executor = PythonExecutor()
+        result = await executor.ainvoke(BAD_SNIPPET_1)
+        assert result.error
+        assert "ModuleNotFoundError" in result.error
+        assert "line 1" in result.error
+
+    async def test_python_executor_expressions(
+        self,
+        mcp_server_test: MCPServerTest,
+    ) -> None:
+        _ = mcp_server_test
+        executor = PythonExecutor(
+            tool_names=["arxiv_download"],
+            tools_server_host=mcp_server_test.host,
+            tools_server_port=mcp_server_test.port,
+        )
+        result = await executor.ainvoke(EXPR_SNIPPET_1)
+        assert result.result == 1
+        result = await executor.ainvoke(EXPR_SNIPPET_2)
+        assert result.result is not None
+
+    async def test_python_executor_exceptions(
+        self,
+        mcp_server_test: MCPServerTest,
+    ) -> None:
+        _ = mcp_server_test
+        executor = PythonExecutor()
+        result = await executor.ainvoke(EXCEPT_SNIPPET_1)
+        assert result.error
+        assert "ZeroDivisionError" in result.error
+        assert "line 2" in result.error
 
 
 def test_execresult_to_message_with_text_result() -> None:

@@ -3,6 +3,7 @@ import contextlib
 import traceback
 import asyncio
 import ast
+import linecache
 from typing import Dict, Any, Optional, List, Callable
 from functools import partial
 import multiprocessing
@@ -54,34 +55,67 @@ class ExecResult(BaseModel):  # type: ignore
 
 
 def _exec_with_return(
-    code: str, globals: Dict[str, Any], locals: Dict[str, Any] | None = None
+    code: str,
+    globals: Dict[str, Any],
+    locals: Dict[str, Any] | None = None,
+    filename: str = "snippet.py",
 ) -> Any:
-    a = ast.parse(code)
-    last_expression = None
-    if a.body:
-        if isinstance(a_last := a.body[-1], ast.Expr):
-            last_expression = ast.unparse(a.body.pop())
-        elif isinstance(a_last, ast.Assign):
-            last_expression = ast.unparse(a_last.targets[0])
-        elif isinstance(a_last, (ast.AnnAssign, ast.AugAssign)):
-            last_expression = ast.unparse(a_last.target)
-    exec(ast.unparse(a), globals, locals)
-    if last_expression:
-        return eval(last_expression, globals, locals)
+    linecache.cache[filename] = (len(code), None, code.splitlines(True), filename)
+
+    mod = ast.parse(code, filename=filename, mode="exec")
+
+    last_expr_node = None
+    if mod.body:
+        last = mod.body[-1]
+        if isinstance(last, ast.Expr):
+            last_expr_node = last.value
+            mod.body.pop()
+        elif isinstance(last, ast.Assign) and last.targets:
+            last_expr_node = last.targets[0]
+        elif isinstance(last, (ast.AnnAssign, ast.AugAssign)):
+            last_expr_node = last.target
+
+    exec_code = compile(mod, filename, "exec")
+    globals.setdefault("__name__", "__main__")
+    globals.setdefault("__file__", filename)
+    exec(exec_code, globals, locals)
+
+    if last_expr_node is not None:
+        expr_ast = ast.Expression(last_expr_node)
+        ast.fix_missing_locations(expr_ast)
+        eval_code = compile(expr_ast, filename, "eval")
+        return eval(eval_code, globals, locals)
+
     return None
 
 
 def _execute_code(
     code: str,
     globals_dict: Dict[str, Any],
+    filename: str = "snippet.py",
 ) -> ExecResult:
     buf = io.StringIO()
     try:
         with contextlib.redirect_stdout(buf):
-            result = _exec_with_return(code, globals_dict)
+            result = _exec_with_return(code, globals_dict, filename=filename)
         return ExecResult(stdout=buf.getvalue(), error="", result=result)
-    except Exception:
-        return ExecResult(stdout=buf.getvalue(), error=traceback.format_exc(), result=None)
+    except SyntaxError as e:
+        line = (
+            e.text
+            if e.text is not None
+            else linecache.getline(e.filename or filename, e.lineno or 0)
+        )
+        caret = ""
+        if e.offset and e.offset > 0:
+            caret = " " * (e.offset - 1) + "^"
+        msg = f"{e.filename}:{e.lineno}:{e.offset}: {e.msg}\n{line}{caret}"
+        return ExecResult(stdout=buf.getvalue(), error=msg, result=None)
+    except Exception as e:
+        tb = traceback.TracebackException.from_exception(e)
+        filtered_frames = [f for f in tb.stack if f.filename == filename]
+        if filtered_frames:
+            tb.stack = type(tb.stack).from_list(filtered_frames)
+        return ExecResult(stdout=buf.getvalue(), error="".join(tb.format()), result=None)
 
 
 def _worker_main(request_q: multiprocessing.Queue, response_q: multiprocessing.Queue) -> None:  # type: ignore
