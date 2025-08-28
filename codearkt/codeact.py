@@ -17,7 +17,7 @@ from codearkt.python_executor import PythonExecutor
 from codearkt.tools import fetch_tools
 from codearkt.event_bus import AgentEventBus, EventType
 from codearkt.llm import LLM, ChatMessages, ChatMessage
-from codearkt.util import get_unique_id
+from codearkt.util import get_unique_id, truncate_content
 
 DEFAULT_END_CODE_SEQUENCE = "<end_code>"
 DEFAULT_END_PLAN_SEQUENCE = "<end_plan>"
@@ -386,6 +386,36 @@ class CodeActAgent:
 
         return [ChatMessage(role="assistant", content=output_text)]
 
+    def _process_messages_for_planning(
+        self, messages: ChatMessages, last_n: int = 20, content_max_length: int = 1000
+    ) -> str:
+        def messages_to_string(messages: ChatMessages) -> str:
+            str_messages = []
+            for m in messages:
+                content = truncate_content(str(m.content), max_length=content_max_length)
+                str_messages.append(f"{m.role}: {content}")
+            return "\n\n".join(str_messages)
+
+        assert self.prompts.plan_prefix is not None
+        assert self.prompts.plan_suffix is not None
+        plan_prefix = self.prompts.plan_prefix.render().strip()
+        plan_suffix = self.prompts.plan_suffix.render().strip()
+        used_messages = []
+        for message in messages:
+            if message.role == "system":
+                continue
+            content = str(message.content)
+            if plan_prefix in content or plan_suffix in content:
+                continue
+            used_messages.append(message)
+        if not used_messages:
+            return ""
+        if len(used_messages) <= last_n:
+            return messages_to_string(used_messages)
+        used_messages = used_messages[-last_n:]
+        conversation = messages_to_string(used_messages)
+        return f"Last {last_n} messages:\n\n{conversation}"
+
     async def _run_planning_step(
         self,
         messages: ChatMessages,
@@ -402,7 +432,7 @@ class CodeActAgent:
             self.prompts.plan_suffix is not None
         ), "Plan suffix is not set, but planning is enabled"
 
-        conversation = "\n\n".join([f"{m.role}: {m.content}" for m in messages[1:]])
+        conversation = self._process_messages_for_planning(messages)
         current_date = datetime.now().strftime("%Y-%m-%d")
         planning_prompt = self.prompts.plan.render(
             conversation=conversation, tools=tools, current_date=current_date
@@ -424,12 +454,15 @@ class CodeActAgent:
                 assert isinstance(chunk, str), event
                 output_text += chunk
                 await self._publish_event(event_bus, session_id, EventType.OUTPUT, chunk)
+                if self.prompts.end_plan_sequence in output_text:
+                    break
+            output_text = output_text.split(self.prompts.end_plan_sequence)[0].strip()
 
-            plan_suffix = "\n\n" + self.prompts.plan_suffix.render().strip() + "\n\n"
-            await self._publish_event(event_bus, session_id, EventType.OUTPUT, plan_suffix)
-            output_text += plan_suffix
-
-            return [ChatMessage(role="assistant", content=output_text)]
+            plan_suffix = self.prompts.plan_suffix.render().strip()
+            return [
+                ChatMessage(role="assistant", content=output_text),
+                ChatMessage(role="user", content=plan_suffix),
+            ]
 
         except Exception:
             exception = traceback.format_exc()

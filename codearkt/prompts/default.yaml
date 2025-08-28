@@ -121,7 +121,7 @@ final: |
 plan: |
   Current date: {{current_date}}
   
-  Given a conversation between a user and an agent:
+  Given a truncated conversation between a user and an agent:
   ```
   {{conversation}}
   ```
@@ -142,15 +142,14 @@ plan: |
   - Has less than 6 steps
   - Uses available tools, inputs, and facts
   - Solves task completely
-  - Ends with '<end_plan>'
+  - Ends with an '<end_plan>' tag
   Keep steps essential, sequential, and high-level. Start with the most generic tools. For instance, with web_search.
 
   ## Tools
   You can leverage these tools:
   {% for tool in tools %}
   ### {{ tool.name }}
-  {{ tool.description }}
-  Arguments: {{tool.inputSchema.properties}}
+  {{ tool.description|truncate(300) }}
   {% endfor %}
 
   Suggest using general tools first. For instance, always try `web_search` before `arxiv_search`.
@@ -160,7 +159,7 @@ plan_prefix: |
   Here are the facts I know and the plan of action that I will follow to solve the task:
 
 plan_suffix: |
-  Now, let me execute this plan and provide the final answer after all steps are completed.
+  Now execute this plan.
 
 no_code_action: |
   No code block or final answer was provided.
