@@ -2,6 +2,7 @@ import json
 from typing import Any, Callable, Mapping, Tuple, Dict, Collection, Optional, List
 from inspect import signature
 import logging
+from contextlib import suppress
 
 from opentelemetry import trace as trace_api
 from opentelemetry import context as context_api
@@ -135,10 +136,16 @@ class _AinvokeWrapper:
                     **dict(get_attributes_from_context()),
                 },
             ) as span:
-                result = await wrapped(*args, **kwargs)
-                span.set_status(trace_api.StatusCode.OK)
-                span.set_attribute(OUTPUT_VALUE, result)
-                return result
+                try:
+                    result = await wrapped(*args, **kwargs)
+                    span.set_status(trace_api.StatusCode.OK)
+                    span.set_attribute(OUTPUT_VALUE, result)
+                    return result
+                except Exception as e:
+                    with suppress(Exception):
+                        span.record_exception(e)
+                    span.set_status(trace_api.StatusCode.ERROR)
+                    raise
         except Exception as e:
             raise e
         finally:
@@ -176,17 +183,23 @@ class _StepWrapper:
                 **dict(get_attributes_from_context()),
             },
         ) as span:
-            result: List[ChatMessage] = await wrapped(*args, **kwargs)
-            formatted_lines = []
-            for message in result:
-                content = _format_message_content(message)
-                formatted_lines.append(f"{message.role}: {content}")
-            conversation = "\n\n".join(formatted_lines)
-            span.set_status(trace_api.StatusCode.OK)
-            span.set_attribute(OUTPUT_VALUE, conversation)
-            output_message_attributes = _get_output_message_attributes(result)
-            span.set_attributes(output_message_attributes)
-            return result
+            try:
+                result: List[ChatMessage] = await wrapped(*args, **kwargs)
+                formatted_lines = []
+                for message in result:
+                    content = _format_message_content(message)
+                    formatted_lines.append(f"{message.role}: {content}")
+                conversation = "\n\n".join(formatted_lines)
+                span.set_status(trace_api.StatusCode.OK)
+                span.set_attribute(OUTPUT_VALUE, conversation)
+                output_message_attributes = _get_output_message_attributes(result)
+                span.set_attributes(output_message_attributes)
+                return result
+            except Exception as e:
+                with suppress(Exception):
+                    span.record_exception(e)
+                span.set_status(trace_api.StatusCode.ERROR)
+                raise
 
 
 class _ToolWrapper:
@@ -221,8 +234,10 @@ class _ToolWrapper:
             message = result.to_message()
             content = _format_message_content(message)
             span.set_attribute(OUTPUT_VALUE, content)
-
-            span.set_status(trace_api.StatusCode.OK)
+            if getattr(result, "error", None):
+                span.set_status(trace_api.StatusCode.ERROR)
+            else:
+                span.set_status(trace_api.StatusCode.OK)
             return result
 
 

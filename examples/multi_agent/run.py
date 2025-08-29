@@ -4,6 +4,7 @@ from pathlib import Path
 
 from phoenix.otel import register
 from dotenv import load_dotenv
+import fire  # type: ignore
 
 from codearkt.codeact import CodeActAgent, Prompts
 from codearkt.llm import LLM
@@ -45,8 +46,8 @@ def get_librarian() -> CodeActAgent:
     )
 
 
-def get_manager() -> CodeActAgent:
-    llm = LLM(model_name="deepseek/deepseek-chat-v3-0324")
+def get_manager(model_name: str) -> CodeActAgent:
+    llm = LLM(model_name=model_name)
     return CodeActAgent(
         name="manager",
         description="A manager agent",
@@ -58,16 +59,16 @@ def get_manager() -> CodeActAgent:
     )
 
 
-def main() -> None:
+def main(port: int = 5055, model_name: str = "deepseek/deepseek-chat-v3-0324") -> None:
     register(
         project_name=PHOENIX_PROJECT_NAME,
         endpoint=f"{PHOENIX_URL}/v1/traces",
         auto_instrument=True,
     )
     CodeActInstrumentor().instrument()
-    agent = get_manager()
-    run_server(agent, MCP_CONFIG)
+    agent = get_manager(model_name=model_name)
+    run_server(agent, MCP_CONFIG, port=port)
 
 
 if __name__ == "__main__":
-    main()
+    fire.Fire(main)
