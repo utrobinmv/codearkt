@@ -25,7 +25,7 @@ DEFAULT_STOP_SEQUENCES = [DEFAULT_END_CODE_SEQUENCE, "Observation:", "Calling to
 AGENT_TOOL_PREFIX = "agent__"
 DEFAULT_MAX_ITERATIONS = 20
 PLANNING_LAST_N = 50
-PLANNING_CONTENT_MAX_LENGTH = 1000
+PLANNING_CONTENT_MAX_LENGTH = 2000
 
 
 def extract_code_from_text(text: str) -> str | None:
@@ -284,6 +284,8 @@ class CodeActAgent:
         for stop_sequence in self.prompts.stop_sequences:
             if stop_sequence in output_text:
                 output_text = output_text.split(stop_sequence)[0].strip()
+                if stop_sequence == self.prompts.end_code_sequence:
+                    output_text += stop_sequence
                 break
 
         self._log(
@@ -420,7 +422,8 @@ class CodeActAgent:
             return messages_to_string(used_messages)
         used_messages = used_messages[-last_n:]
         conversation = messages_to_string(used_messages)
-        return f"Last {last_n} messages:\n\n{conversation}"
+        first_message = messages_to_string(used_messages[:1])
+        return f"First message:\n\n{first_message}\n\nLast {last_n} messages:\n\n{conversation}"
 
     async def _run_planning_step(
         self,
@@ -462,7 +465,10 @@ class CodeActAgent:
                 await self._publish_event(event_bus, session_id, EventType.OUTPUT, chunk)
                 if self.prompts.end_plan_sequence in output_text:
                     break
-            output_text = output_text.split(self.prompts.end_plan_sequence)[0].strip()
+
+            if self.prompts.end_plan_sequence in output_text:
+                output_text = output_text.split(self.prompts.end_plan_sequence)[0].strip()
+                output_text += self.prompts.end_plan_sequence
 
             plan_suffix = self.prompts.plan_suffix.render().strip()
             return [
