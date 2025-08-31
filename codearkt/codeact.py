@@ -352,7 +352,7 @@ class CodeActAgent:
         code_action = extract_code_from_text(content)
         assert code_action is None
         content = content.lower()
-        return "final answer" in content
+        return "final answer:" in content
 
     async def _handle_final_message(
         self,
