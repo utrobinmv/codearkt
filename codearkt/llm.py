@@ -75,16 +75,21 @@ class LLM:
             self._params[k] = v
 
     def _trim_messages(self, messages: ChatMessages) -> ChatMessages:
+        if len(messages) <= 2:
+            return messages
         tokens_count = count_openai_tokens(messages)
-        system_message = None
+        first_messages = []
         if messages[0].role == "system":
-            system_message = messages[0]
+            first_messages = messages[:1]
+            messages = messages[1:]
+        if messages[0].role == "user":
+            first_messages.extend(messages[:1])
             messages = messages[1:]
         while tokens_count > self._max_history_tokens and len(messages) >= 2:
             tokens_count -= count_openai_tokens(messages[:2])
             messages = messages[2:]
-        if system_message:
-            messages = [system_message] + messages
+        if first_messages:
+            messages = first_messages + messages
         return messages
 
     async def astream(

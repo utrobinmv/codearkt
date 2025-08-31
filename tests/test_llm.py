@@ -23,7 +23,7 @@ class TestLLM:
                 output += delta.content
         assert "Hello, world!" in output
 
-    async def test_llm_max_history_tokens(self, deepseek_small_context: LLM) -> None:
+    async def test_llm_max_history_tokens_base(self, deepseek_small_context: LLM) -> None:
         messages = [
             ChatMessage(role="user", content="Hello, world!"),
             ChatMessage(role="assistant", content="Hello!"),
@@ -39,3 +39,17 @@ class TestLLM:
         assert usage
         assert usage.prompt_tokens < deepseek_small_context._max_history_tokens
         assert output
+
+    async def test_llm_max_history_tokens_first_messages(self, deepseek_small_context: LLM) -> None:
+        first_messages = [
+            ChatMessage(role="system", content="You are a helpful assistant."),
+            ChatMessage(role="user", content="First user message"),
+        ]
+        messages = [
+            ChatMessage(role="user", content="Hello, world!"),
+            ChatMessage(role="assistant", content="Hello!"),
+        ] * 10000
+        trimmed_messages = deepseek_small_context._trim_messages(first_messages + messages)
+        assert trimmed_messages[0] == first_messages[0]
+        assert trimmed_messages[1] == first_messages[1]
+        assert len(trimmed_messages) < 100
