@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from typing import Dict, Any, Optional, List, Callable, AsyncGenerator
 
 import uvicorn
@@ -31,6 +32,13 @@ PROXY_SSE_READ_TIMEOUT = 12 * 60 * 60
 
 
 fastmcp_settings.stateless_http = True
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
+
+def _log(message: str, session_id: str, level: int = logging.INFO) -> None:
+    message = f"| {session_id:<8} | {message}"
+    logger.log(level, message)
 
 
 async def _wait_until_started(server: uvicorn.Server) -> None:
@@ -93,6 +101,7 @@ def create_agent_endpoint(
                     async for event in event_bus.stream_events(session_id):
                         yield event.model_dump_json()
                 finally:
+                    _log("Cancelling session", session_id)
                     event_bus.cancel_session(session_id)
 
             return StreamingResponse(
@@ -139,6 +148,7 @@ def get_agent_app(
         )
 
     async def cancel_session(request: CancelRequest) -> Dict[str, str]:
+        _log("Cancelling session", request.session_id)
         event_bus.cancel_session(request.session_id)
         return {"status": "cancelled", "session_id": request.session_id}
 

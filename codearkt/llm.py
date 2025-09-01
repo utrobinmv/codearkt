@@ -1,6 +1,5 @@
 import os
 import copy
-import logging
 from typing import Dict, Any, List, cast, AsyncGenerator, Optional
 
 from tiktoken import encoding_for_model
@@ -70,7 +69,6 @@ class LLM:
         self._max_history_tokens = max_history_tokens
         self._params: Dict[str, Any] = {}
         self._num_retries = num_retries
-        self._logger = logging.getLogger(self.__class__.__name__)
         for k, v in kwargs.items():
             self._params[k] = v
 

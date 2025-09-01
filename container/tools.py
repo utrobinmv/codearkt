@@ -3,6 +3,7 @@ import asyncio
 import functools
 import httpx
 import traceback
+from concurrent.futures import ThreadPoolExecutor
 from typing import List, Dict, Callable, Any, Optional
 
 from mcp import ClientSession, Tool
@@ -61,7 +62,15 @@ async def _acall(tool: str, tool_server_port: int, *args: Any, **kwargs: Any) ->
 def _call(
     tool: str, tool_server_port: int, *args: Any, **kwargs: Any
 ) -> List[ContentBlock] | str | None:
-    return asyncio.run(_acall(tool, tool_server_port, *args, **kwargs))
+    def runner() -> List[ContentBlock] | str | None:
+        return asyncio.run(_acall(tool, tool_server_port, *args, **kwargs))
+
+    executor = ThreadPoolExecutor(max_workers=1)
+    try:
+        future = executor.submit(runner)
+        return future.result(timeout=TOOL_TIMEOUT + 5)
+    finally:
+        executor.shutdown(wait=False, cancel_futures=True)
 
 
 async def fetch_tools(
