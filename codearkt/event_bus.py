@@ -11,6 +11,7 @@ STREAM_TIMEOUT = 24 * 60 * 60  # 24 hours
 class EventType(StrEnum):
     AGENT_START = "agent_start"
     OUTPUT = "output"
+    PLANNING_OUTPUT = "planning_output"
     TOOL_RESPONSE = "observation"
     AGENT_END = "agent_end"
 

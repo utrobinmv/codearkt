@@ -24,6 +24,12 @@ def main(host: str = DEFAULT_SERVER_HOST, port: int = DEFAULT_SERVER_PORT) -> No
             for event in events:
                 is_root_agent = len(agent_names) == 1
                 if event.event_type == EventType.TOOL_RESPONSE:
+                    if is_root_agent:
+                        real_messages.append(
+                            ChatMessage(
+                                role="user", content="Tool response:\n" + str(event.content)
+                            )
+                        )
                     print("Tool Response:\n", event.content)
                 elif event.event_type == EventType.AGENT_START:
                     print(f"\n**Starting {event.agent_name} agent...**\n\n")
@@ -31,6 +37,10 @@ def main(host: str = DEFAULT_SERVER_HOST, port: int = DEFAULT_SERVER_PORT) -> No
                 elif event.event_type == EventType.AGENT_END:
                     print(f"\n**Agent {event.agent_name} completed the task!**\n\n")
                     agent_names.pop()
+                elif event.event_type == EventType.PLANNING_OUTPUT:
+                    if not event.content:
+                        continue
+                    print(event.content, end="")
                 elif event.event_type == EventType.OUTPUT:
                     if not event.content:
                         continue

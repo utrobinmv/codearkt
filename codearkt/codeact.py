@@ -452,7 +452,7 @@ class CodeActAgent:
             output_stream = self.llm.astream(input_messages, stop=[self.prompts.end_plan_sequence])
 
             plan_prefix = self.prompts.plan_prefix.render().strip() + "\n\n"
-            await self._publish_event(event_bus, session_id, EventType.OUTPUT, plan_prefix)
+            await self._publish_event(event_bus, session_id, EventType.PLANNING_OUTPUT, plan_prefix)
             output_text = plan_prefix
 
             async for event in output_stream:
@@ -462,7 +462,7 @@ class CodeActAgent:
                     continue
                 assert isinstance(chunk, str), event
                 output_text += chunk
-                await self._publish_event(event_bus, session_id, EventType.OUTPUT, chunk)
+                await self._publish_event(event_bus, session_id, EventType.PLANNING_OUTPUT, chunk)
                 if self.prompts.end_plan_sequence in output_text:
                     break
 

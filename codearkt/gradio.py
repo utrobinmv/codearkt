@@ -63,14 +63,14 @@ def bot(
                     "content": f"\n**Agent {event.agent_name} completed the task!**\n\n",
                 }
             )
-        elif event.event_type == EventType.OUTPUT:
+        elif event.event_type == EventType.OUTPUT or event.event_type == EventType.PLANNING_OUTPUT:
             if prev_message_title == CODE_TITLE:
                 history.append({"role": "assistant", "content": ""})
 
             assert event.content is not None
             history[-1]["content"] += event.content
 
-            if is_root_agent:
+            if is_root_agent and event.event_type == EventType.OUTPUT:
                 if real_messages[-1].role == "assistant" and not real_messages[-1].tool_calls:
                     assert isinstance(real_messages[-1].content, str)
                     real_messages[-1].content += event.content
