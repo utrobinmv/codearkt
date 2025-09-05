@@ -24,6 +24,7 @@ from codearkt.util import get_unique_id, truncate_content, is_correct_json
 SHA_DIGEST: str = "sha256:79a275c4552a10b8bbce44071bade9f9aed04eae5bd28684a3edc6f9c0e0b75f"
 DEFAULT_IMAGE: str = f"phoenix120/codearkt_http@{SHA_DIGEST}"
 IMAGE: str = os.getenv("CODEARKT_EXECUTOR_IMAGE", DEFAULT_IMAGE)
+DOCKER_HOST_IP_ADDR: str = os.getenv("DOCKER_HOST_IP_ADDR", "localhost")
 MEM_LIMIT: str = "512m"
 CPU_QUOTA: int = 50000
 CPU_PERIOD: int = 100000
@@ -136,6 +137,9 @@ def run_network(client: DockerClient) -> Network:
 
 
 def run_container(client: DockerClient, net_name: str) -> Container:
+    host_gateway = "host-gateway"
+    if DOCKER_HOST_IP_ADDR != 'localhost':
+        host_gateway = DOCKER_HOST_IP_ADDR
     return client.containers.run(
         IMAGE,
         detach=True,
@@ -149,7 +153,7 @@ def run_container(client: DockerClient, net_name: str) -> Container:
         read_only=True,
         tmpfs={"/tmp": "rw,size=64m", "/run": "rw,size=16m"},
         security_opt=["no-new-privileges"],
-        extra_hosts={"host.docker.internal": "host-gateway"},
+        extra_hosts={"host.docker.internal": host_gateway},
         sysctls={"net.ipv4.ip_forward": "0"},
         network=net_name,
         dns=[],
@@ -166,6 +170,9 @@ class PythonExecutor:
         interpreter_id: Optional[str] = None,
     ) -> None:
         global _CLIENT, _CONTAINER
+
+        if tools_server_host is None or tools_server_host == '0.0.0.0':
+            tools_server_host = DOCKER_HOST_IP_ADDR
 
         with _DOCKER_LOCK:
             if not _CLIENT:
@@ -248,7 +255,7 @@ class PythonExecutor:
         self.container.reload()
         ports = self.container.attrs["NetworkSettings"]["Ports"]
         mapping = ports["8000/tcp"][0]
-        return f"http://localhost:{mapping['HostPort']}"
+        return f"http://{self.tools_server_host}:{mapping['HostPort']}"
 
     async def cleanup(self) -> None:
         payload = {

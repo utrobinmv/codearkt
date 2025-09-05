@@ -1,0 +1,17 @@
+services:
+  dev:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    command: bash -c "chmod a+x /root/run_in_docker.sh && /root/run_in_docker.sh"  
+    privileged: true
+    ports:
+      - 6000:6000
+      - 5056:5056
+      - 5055:5055      
+      - 7860:7860
+      - 8000:8000
+    volumes:
+      - ./run_in_docker.sh:/root/run_in_docker.sh
+      - /var/run/docker.sock:/var/run/docker.sock
+    network_mode: bridge
